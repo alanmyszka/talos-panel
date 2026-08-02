@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Talos Panel{% endblock %}</title>
+  <link rel="stylesheet" href="/static/fonts.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/async.css">
+  <link rel="stylesheet" href="/static/auth.css">
+</head>
+<body>
+  {% if request.state.user %}<div class="app-frame">
+    <aside class="app-sidebar">
+      <a class="app-brand" href="/"><span class="brand-cube"></span><span><strong>Talos Panel</strong><small>{{ t("Minecraft control") }}</small></span></a>
+      <nav class="app-nav" aria-label="Main navigation">
+        <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span></span>{{ t("Servers") }}</a>
+        <a class="{% if request.url.path == '/servers/new' %}active{% endif %}" href="/servers/new"><span></span>{{ t("New server") }}</a>
+      </nav>
+      <div class="app-sidebar-foot">
+        <div class="language-switch" aria-label="Language"><form method="post" action="/language/en"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'en' %}active{% endif %}" type="submit">EN</button></form><form method="post" action="/language/pl"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'pl' %}active{% endif %}" type="submit">PL</button></form></div>
+        {% if request.state.user.role.value == "admin" %}<a class="sidebar-foot-link" href="/admin/users">{{ t("Users") }}</a>{% endif %}
+        <a class="sidebar-foot-account" href="/account"><strong>{{ request.state.user.email }}</strong><small>{{ request.state.user.role.value }}</small></a>
+        <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="link-button" type="submit">{{ t("Log out") }}</button></form>
+      </div>
+    </aside>
+    <main>{% block content %}{% endblock %}</main>
+  </div>{% else %}<main class="public-main"><div class="public-language language-switch"><form method="post" action="/language/en"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'en' %}active{% endif %}" type="submit">EN</button></form><form method="post" action="/language/pl"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'pl' %}active{% endif %}" type="submit">PL</button></form></div>{% block public_content %}{{ self.content() }}{% endblock %}</main>{% endif %}
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+  <script>
+  window.talosToast = function(message, error = false) {
+    if (!message) return;
+    const region = document.querySelector('#toast-region');
+    const toast = document.createElement('div');
+    toast.className = `toast ${error ? 'toast-error' : 'toast-success'}`;
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.textContent = error ? '!' : '✓';
+    const text = document.createElement('span');
+    text.textContent = message;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-close';
+    close.setAttribute('aria-label', 'Close notification');
+    close.textContent = '×';
+    close.addEventListener('click', () => toast.remove());
+    toast.append(icon, text, close);
+    region.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast-visible'));
+    setTimeout(() => {
+      toast.classList.remove('toast-visible');
+      setTimeout(() => toast.remove(), 220);
+    }, error ? 7000 : 4200);
+  };
+  </script>
+</body>
+</html>

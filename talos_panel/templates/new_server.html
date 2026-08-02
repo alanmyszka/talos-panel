@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ t("New server") }} · Talos Panel{% endblock %}
+{% block content %}
+<h1>{{ t("Create a server") }}</h1><p>{{ t("The JAR will be downloaded and verified from the official source.") }}</p>
+<form method="post" action="/servers" class="card form">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  <label>{{ t("Name") }}<input name="name" required maxlength="80" placeholder="Survival"></label>
+  <label>{{ t("Server type") }}<select id="server-type" name="server_type" required><option value="paper">Paper</option><option value="vanilla">Vanilla</option></select></label>
+  <label>{{ t("Version") }}<select id="version" name="game_version" required><option>{{ t("Loading versions…") }}</option></select></label>
+  <div class="columns"><label>{{ t("Memory") }} (MB)<input type="number" name="memory_mb" min="1024" max="32768" value="4096" required></label><label>{{ t("Host port") }}<input type="number" name="host_port" min="1024" max="65535" value="25565" required></label></div>
+  <h2>{{ t("Gameplay settings") }}</h2>
+  <label>MOTD<input name="motd" minlength="1" maxlength="100" value="A Minecraft Server" required></label>
+  <div class="columns">
+    <label>{{ t("Game mode") }}<select name="gamemode"><option value="survival">Survival</option><option value="creative">Creative</option><option value="adventure">Adventure</option><option value="spectator">Spectator</option></select></label>
+    <label>{{ t("Difficulty") }}<select name="difficulty"><option value="peaceful">Peaceful</option><option value="easy" selected>Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
+  </div>
+  <div class="columns"><label>{{ t("Maximum players") }}<input type="number" name="max_players" min="1" max="1000" value="20" required></label><label>{{ t("View distance") }}<input type="number" name="view_distance" min="2" max="32" value="10" required></label></div>
+  <label>{{ t("Simulation distance") }}<input type="number" name="simulation_distance" min="2" max="32" value="10" required></label>
+  <div class="creation-checks">
+    <label class="check"><input type="checkbox" name="whitelist" value="true">{{ t("Enable whitelist") }}</label>
+    <label class="check"><input type="checkbox" name="pvp" value="true" checked>{{ t("Enable PvP") }}</label>
+    <label class="check"><input type="checkbox" name="allow_flight" value="true">{{ t("Allow flight") }}</label>
+  </div>
+  <label class="check"><input type="checkbox" name="eula_accepted" value="true" required>I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer">Minecraft EULA</a>.</label>
+  <button type="submit">{{ t("Create and install") }}</button>
+</form>
+<script>
+const typeSelect = document.querySelector('#server-type');
+const versionSelect = document.querySelector('#version');
+async function loadVersions() {
+  versionSelect.innerHTML = '<option>{{ t("Loading versions…") }}</option>';
+  const response = await fetch(`/servers/version-options?server_type=${encodeURIComponent(typeSelect.value)}`);
+  versionSelect.innerHTML = await response.text();
+}
+typeSelect.addEventListener('change', loadVersions);
+loadVersions();
+</script>
+{% endblock %}

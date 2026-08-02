@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+{% if request.query_params.get("message") %}<script>window.addEventListener('DOMContentLoaded', () => window.talosToast({{ t(request.query_params.get("message"))|tojson }}));</script>{% endif %}
+<div class="title-row dashboard-title"><div><p class="section-label">{{ t("Infrastructure") }}</p><h1>{{ t("Servers") }}</h1><p>{{ t("Install and manage Paper and Vanilla servers.") }}</p></div><a class="button" href="/servers/new">+ {{ t("New server") }}</a></div>
+<section class="server-list">
+<div class="server-list-head"><span>{{ t("Server") }}</span><span>{{ t("Address") }}</span><span>{{ t("Software") }}</span><span>{{ t("Status") }}</span></div>
+{% for card in cards %}
+  {% set server = card.server %}
+  {% if not server.installation_state or server.installation_state.value != "completed" %}
+    {% set display_state = "installation failed" if server.installation_state and server.installation_state.value == "failed" else "installing" %}
+    {% set state_class = "error" if server.installation_state and server.installation_state.value == "failed" else "installing" %}
+  {% elif card.runtime_state == "running" %}
+    {% set display_state = "running" %}{% set state_class = "running" %}
+  {% elif card.runtime_state in ["not_created", "created", "exited"] %}
+    {% set display_state = "offline" %}{% set state_class = "offline" %}
+  {% else %}
+    {% set display_state = card.runtime_state|replace("_", " ") %}{% set state_class = card.runtime_state %}
+  {% endif %}
+  <a class="server-row" href="/servers/{{ server.id }}">
+    <div class="server-card-identity"><span class="server-glyph">{{ server.name[:1]|upper }}</span><div><h2>{{ server.name }}</h2><p>{{ server.id }}</p></div></div>
+    <code>localhost:{{ server.host_port }}</code>
+    <span>{{ server.server_type.value|title }} {{ server.game_version }}</span>
+    <span class="status state-{{ state_class }}">{{ t(display_state) }}</span>
+  </a>
+{% else %}<div class="empty server-list-empty"><h2>{{ t("No servers yet") }}</h2><p>{{ t("Create the first server to begin installation.") }}</p><a class="button" href="/servers/new">{{ t("Create server") }}</a></div>{% endfor %}
+</section>
+{% endblock %}

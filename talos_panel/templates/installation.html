@@ -1,0 +1,8 @@
+{% if not job or job.state.value != "completed" %}<div id="installation" class="card install-card" data-state="{{ job.state.value if job else 'not_installed' }}">
+  <div class="install-heading"><div><p class="section-label">{{ t("Server installation") }}</p><h2 id="install-title">{{ job.state.value|replace("_", " ")|title if job else t("Not installed") }}</h2></div><span id="install-percent" class="status">0%</span></div>
+  <div class="install-track"><span id="install-bar"></span></div>
+  <div class="install-steps" aria-label="{{ t("Installation stages") }}">
+    {% for value, label in [("resolving", "Resolve"), ("downloading", "Download"), ("verifying", "Verify"), ("installing", "Prepare")] %}<span data-install-step="{{ value }}">{{ t(label) }}</span>{% endfor %}
+  </div>
+  <p id="install-detail" class="hint">{% if job and job.state.value == "failed" %}{{ job.error_message }}{% else %}{{ t("Talos is preparing the server. This page updates automatically.") }}{% endif %}</p>
+</div>{% endif %}

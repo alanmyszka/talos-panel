@@ -1,0 +1,597 @@
+{% extends "base.html" %}
+{% block title %}{{ server.name }} · Talos Panel{% endblock %}
+{% block content %}
+<div id="action-notice" class="hidden" data-initial-message="{{ t(message) if message else '' }}"></div>
+
+<div class="server-shell"><aside class="server-sidebar">
+  <a class="sidebar-back" href="/">← {{ t("All servers") }}</a>
+  <div class="sidebar-server">
+    <span class="server-glyph">{{ server.name[:1]|upper }}</span>
+    <div><strong>{{ server.name }}</strong><small id="sidebar-runtime">{{ runtime_state|replace("_", " ") }}</small></div>
+  </div>
+<nav class="server-tabs" role="tablist" aria-label="Server sections">
+  <button type="button" role="tab" data-tab="overview" aria-controls="tab-overview" aria-selected="true"><span></span>{{ t("Dashboard") }}</button>
+  <button type="button" role="tab" data-tab="console" aria-controls="tab-console" aria-selected="false"><span></span>{{ t("Console") }}</button>
+  <button type="button" role="tab" data-tab="files" aria-controls="tab-files" aria-selected="false"><span></span>{{ t("Files") }}</button>
+  {% if can_manage %}<button type="button" role="tab" data-tab="settings" aria-controls="tab-settings" aria-selected="false"><span></span>{{ t("Settings") }}</button>{% endif %}
+  {% if request.state.user.role.value == "admin" %}<button type="button" role="tab" data-tab="access" aria-controls="tab-access" aria-selected="false"><span></span>{{ t("Access") }}</button>{% endif %}
+  {% if can_manage %}<button class="danger-tab" type="button" role="tab" data-tab="danger" aria-controls="tab-danger" aria-selected="false"><span></span>{{ t("Danger zone") }}</button>{% endif %}
+</nav>
+<div class="sidebar-account">
+  <div class="language-switch"><form method="post" action="/language/en"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'en' %}active{% endif %}" type="submit">EN</button></form><form method="post" action="/language/pl"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'pl' %}active{% endif %}" type="submit">PL</button></form></div>
+  {% if request.state.user.role.value == "admin" %}<a href="/admin/users">{{ t("Users") }}</a>{% endif %}
+  <a href="/account">{{ request.state.user.email }}</a>
+  <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="link-button" type="submit">{{ t("Log out") }}</button></form>
+</div>
+</aside>
+<div class="server-workspace">
+<div class="title-row server-heading">
+  <div>
+    <h1>{{ server.name }}</h1>
+    <p>{{ server.server_type.value|title }} {{ server.game_version }} · localhost:{{ server.host_port }}</p>
+  </div>
+  <div class="actions">
+    <form class="runtime-action start-action{% if runtime_state == 'running' or not server.installation_state or server.installation_state.value != 'completed' %} hidden{% endif %}" method="post" action="/servers/{{ server.id }}/start"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button type="submit">{{ t("Start server") }}</button></form>
+    <form class="runtime-action restart-action{% if runtime_state != 'running' %} hidden{% endif %}" method="post" action="/servers/{{ server.id }}/restart"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="secondary" type="submit">{{ t("Restart") }}</button></form>
+    <form class="runtime-action stop-action{% if runtime_state != 'running' %} hidden{% endif %}" method="post" action="/servers/{{ server.id }}/stop"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="danger" type="submit">{{ t("Stop server") }}</button></form>
+  </div>
+</div>
+
+<div id="tab-overview" class="tab-panel" data-tab-panel="overview" role="tabpanel">
+<section class="server-layout{% if server.installation_state and server.installation_state.value == 'completed' %} single{% endif %}">
+  <div class="card overview">
+    <div class="overview-title"><h2>{{ t("Server details") }}</h2><span id="runtime-badge" class="status state-{{ runtime_state }}">{{ t(runtime_state|replace("_", " ")) }}</span></div>
+    <dl class="details">
+      <div><dt>{{ t("Address") }}</dt><dd><code id="server-address">localhost:{{ server.host_port }}</code><button class="copy" type="button" data-copy="localhost:{{ server.host_port }}">{{ t("Copy") }}</button></dd></div>
+      <div><dt>{{ t("Port") }}</dt><dd id="server-port">{{ server.host_port }}</dd></div>
+      <div><dt>{{ t("Memory") }}</dt><dd id="server-memory">{{ server.memory_mb }} MB</dd></div>
+      <div><dt>{{ t("Installed version") }}</dt><dd id="installed-version">{{ server.installed_version or "—" }}</dd></div>
+      <div><dt>Java</dt><dd id="installed-java">{{ server.java_version or "—" }}</dd></div>
+      <div><dt>{{ t("Server ID") }}</dt><dd><code>{{ server.id }}</code></dd></div>
+      <div><dt>{{ t("Container") }}</dt><dd><code>{{ container_id[:12] if container_id else t("Not created") }}</code></dd></div>
+    </dl>
+  </div>
+  {% if not server.installation_state or server.installation_state.value != "completed" %}{% include "installation.html" %}{% endif %}
+</section>
+
+<section class="metric-grid" aria-label="Live server metrics">
+  <div class="card metric"><span>{{ t("CPU") }}</span><strong id="cpu-value">—</strong><small>{{ t("Container usage") }}</small></div>
+  <div class="card metric"><span>{{ t("Memory") }}</span><strong id="memory-value">—</strong><small id="memory-detail">{{ server.memory_mb }} MB</small></div>
+  <div class="card metric"><span>{{ t("Uptime") }}</span><strong id="uptime-value">—</strong><small>{{ t("Since last start") }}</small></div>
+  <div class="card metric"><span>{{ t("Players") }}</span><strong id="players-value">—</strong><small id="players-detail">{{ t("Waiting for server") }}</small></div>
+</section>
+
+<section class="card players-card">
+  <div class="overview-title"><h2>{{ t("Players online") }}</h2><span id="players-badge" class="status">—</span></div>
+  <div id="players-list" class="player-list"><span class="hint">{{ t("Player data becomes available when Minecraft is ready.") }}</span></div>
+</section>
+</div>
+
+<div id="tab-files" class="tab-panel hidden" data-tab-panel="files" role="tabpanel">
+<section class="card files-card">
+  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2><p>{{ t("Server files only. Symbolic links and protected Talos files are not exposed.") }}</p></div><span class="status">{% if can_manage %}{{ t("Read / write") }}{% else %}{{ t("Read only") }}{% endif %}</span></div>
+  {% if can_manage %}<p class="hint">{{ t("Stop the server before uploading, editing, creating, deleting, or changing plugins.") }}</p>{% endif %}
+  <div class="file-toolbar">
+    <button id="files-up" class="secondary" type="button">{{ t("Up") }}</button>
+    <code id="files-path">/</code>
+  </div>
+  {% if can_manage %}
+  <div class="file-actions">
+    <form id="file-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><input type="file" name="upload" required><button type="submit">{{ t("Upload file") }}</button></form>
+    <form id="mkdir-form" action="/servers/{{ server.id }}/files/mkdir"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><input name="name" maxlength="255" placeholder="{{ t('New directory') }}" required><button type="submit" class="secondary">{{ t("Create directory") }}</button></form>
+  </div>
+  {% if server.server_type.value == "paper" %}
+  <form id="plugin-upload-form" class="plugin-upload" action="/servers/{{ server.id }}/plugins/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label>{{ t("Paper plugin JAR") }}<input type="file" name="upload" accept=".jar,application/java-archive" required></label><button type="submit">{{ t("Upload plugin") }}</button><span class="hint">{{ t("The JAR must contain plugin.yml or paper-plugin.yml.") }}</span></form>
+  {% endif %}
+  {% endif %}
+  <div id="files-error" class="error hidden"></div>
+  <div class="file-table-wrap"><table class="file-table"><thead><tr><th>{{ t("Name") }}</th><th>{{ t("Size") }}</th><th>{{ t("Actions") }}</th></tr></thead><tbody id="files-body"><tr><td colspan="3">{{ t("Loading…") }}</td></tr></tbody></table></div>
+  {% if can_manage %}
+  <form id="text-editor" class="text-editor hidden" action="/servers/{{ server.id }}/files/text"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input id="editor-path" type="hidden" name="path"><div class="overview-title"><h3 id="editor-title">{{ t("Edit file") }}</h3><button id="editor-close" class="secondary" type="button">{{ t("Close") }}</button></div><textarea name="content" spellcheck="false"></textarea><div class="editor-footer"><button type="submit">{{ t("Save file") }}</button><span class="editor-state hint" aria-live="polite"></span></div></form>
+  {% endif %}
+</section>
+</div>
+
+{% if can_manage %}
+<div id="tab-settings" class="tab-panel hidden" data-tab-panel="settings" role="tabpanel">
+<section class="card settings-card">
+  <div class="overview-title">
+    <div><h2>{{ t("Server settings") }}</h2><p>{{ t("Changes are written safely to server.properties and take effect after restart.") }}</p></div>
+    <span class="status">{{ t("Owner") }}</span>
+  </div>
+  {% if settings_error %}<p class="error">{{ settings_error }}</p>{% endif %}
+  <form class="settings-form" method="post" action="/servers/{{ server.id }}/settings">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label class="wide">MOTD<input name="motd" minlength="1" maxlength="100" value="{{ properties.motd }}" required></label>
+    <label>{{ t("Game mode") }}<select name="gamemode">{% for value in ["survival", "creative", "adventure", "spectator"] %}<option value="{{ value }}"{% if properties.gamemode == value %} selected{% endif %}>{{ value|title }}</option>{% endfor %}</select></label>
+    <label>{{ t("Difficulty") }}<select name="difficulty">{% for value in ["peaceful", "easy", "normal", "hard"] %}<option value="{{ value }}"{% if properties.difficulty == value %} selected{% endif %}>{{ value|title }}</option>{% endfor %}</select></label>
+    <label>{{ t("Maximum players") }}<input type="number" name="max_players" min="1" max="1000" value="{{ properties.max_players }}" required></label>
+    <label>{{ t("Memory") }} (MB)<input type="number" name="memory_mb" min="1024" max="32768" step="256" value="{{ server.memory_mb }}" required></label>
+    <label>{{ t("Host port") }}<input type="number" name="host_port" min="1024" max="65535" value="{{ server.host_port }}" required></label>
+    <label>{{ t("View distance") }}<input type="number" name="view_distance" min="2" max="32" value="{{ properties.view_distance }}" required></label>
+    <label>{{ t("Simulation distance") }}<input type="number" name="simulation_distance" min="2" max="32" value="{{ properties.simulation_distance }}" required></label>
+    <div class="settings-checks wide">
+      <label><input type="checkbox" name="whitelist" value="true"{% if properties.whitelist %} checked{% endif %}> {{ t("Whitelist") }}</label>
+      <label><input type="checkbox" name="pvp" value="true"{% if properties.pvp %} checked{% endif %}> PvP</label>
+      <label><input type="checkbox" name="allow_flight" value="true"{% if properties.allow_flight %} checked{% endif %}> {{ t("Allow flight") }}</label>
+    </div>
+    <div class="wide"><button type="submit">{{ t("Save settings") }}</button><span class="settings-state hint" aria-live="polite"></span></div>
+  </form>
+</section>
+</div>
+{% endif %}
+
+{% if request.state.user.role.value == "admin" %}
+<div id="tab-access" class="tab-panel hidden" data-tab-panel="access" role="tabpanel">
+<section class="card"><h2>{{ t("Server access") }}</h2><p>{{ t("Owners can manage installation and operators can control the server and console.") }}</p><form method="post" action="/servers/{{ server.id }}/members" class="member-form"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><select name="user_id">{% for user in users %}<option value="{{ user.id }}">{{ user.email }}</option>{% endfor %}</select><select name="role"><option value="operator">{{ t("Operator") }}</option><option value="owner">{{ t("Owner") }}</option></select><button type="submit">{{ t("Add or update") }}</button></form></section>
+</div>
+{% endif %}
+
+{% if can_manage %}
+<div id="tab-danger" class="tab-panel hidden" data-tab-panel="danger" role="tabpanel">
+<section class="card danger-zone">
+  <h2>{{ t("Delete server") }}</h2>
+  <p>{{ t("This removes the server from Talos Panel and its Docker container. Game files are moved to the local Talos trash for manual recovery.") }}</p>
+  <form class="delete-form" method="post" action="/servers/{{ server.id }}/delete" data-server-name="{{ server.name }}">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label>{{ t("Type") }} <strong>{{ server.name }}</strong> {{ t("to confirm") }}<input name="confirmation" maxlength="80" autocomplete="off" required></label>
+    <button class="danger" type="submit" disabled>{{ t("Delete server") }}</button>
+  </form>
+</section>
+</div>
+{% endif %}
+
+<div id="tab-console" class="tab-panel hidden" data-tab-panel="console" role="tabpanel">
+<section class="card console-card">
+  <div class="overview-title"><div><h2>{{ t("Console") }}</h2><p id="console-status">{{ t("Connecting…") }}</p></div><span id="ready-badge" class="status">{{ t("Not ready") }}</span></div>
+  <pre id="console-output" aria-live="polite">{{ t("Waiting for server output…") }}</pre>
+  <form class="command-form" method="post" action="/servers/{{ server.id }}/command">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <span>&gt;</span><input name="command" maxlength="256" autocomplete="off" placeholder="say Hello from Talos Panel" disabled>
+    <button type="submit" disabled>{{ t("Send") }}</button>
+  </form>
+  <p class="hint">{{ t("Commands are sent directly to Minecraft stdin. Do not include a leading slash.") }}</p>
+</section>
+</div>
+</div>
+</div>
+
+<script>
+const ui = {
+  readyToStart: {{ t("Ready to start")|tojson }},
+  failed: {{ t("Failed")|tojson }},
+  installationFailed: {{ t("Installation failed.")|tojson }},
+  installationCompleted: {{ t("Server installation completed")|tojson }},
+  installationBackground: {{ t("Installation continues in the background. You can leave this page safely.")|tojson }},
+  reconnectingInstallation: {{ t("Reconnecting to installation status…")|tojson }},
+  emptyDirectory: {{ t("This directory is empty.")|tojson }},
+  download: {{ t("Download file")|tojson }}, edit: {{ t("Edit")|tojson }}, enable: {{ t("Enable")|tojson }}, disable: {{ t("Disable")|tojson }}, delete: {{ t("Delete")|tojson }},
+  saved: {{ t("Saved")|tojson }}, saving: {{ t("Saving…")|tojson }}, savedRestart: {{ t("Saved — restart required")|tojson }},
+  sending: {{ t("Sending…")|tojson }}, working: {{ t("Working…")|tojson }}, liveOutput: {{ t("Live output")|tojson }},
+  minecraftReady: {{ t("Minecraft ready")|tojson }}, notReady: {{ t("Not ready")|tojson }}, unavailable: {{ t("Unavailable")|tojson }},
+  noPlayers: {{ t("No players are connected.")|tojson }}, playerDataUnavailable: {{ t("Player data is not available yet.")|tojson }},
+  consoleDisconnected: {{ t("Console disconnected")|tojson }}, copied: {{ t("Copied")|tojson }}
+};
+const output = document.querySelector('#console-output');
+const statusText = document.querySelector('#console-status');
+const runtimeBadge = document.querySelector('#runtime-badge');
+const readyBadge = document.querySelector('#ready-badge');
+const commandInput = document.querySelector('.command-form input[name="command"]');
+const commandButton = document.querySelector('.command-form button');
+const startForm = document.querySelector('.start-action');
+const restartForm = document.querySelector('.restart-action');
+const stopForm = document.querySelector('.stop-action');
+const notice = document.querySelector('#action-notice');
+const sidebarRuntime = document.querySelector('#sidebar-runtime');
+const installationCard = document.querySelector('#installation');
+const cpuValue = document.querySelector('#cpu-value');
+const memoryValue = document.querySelector('#memory-value');
+const memoryDetail = document.querySelector('#memory-detail');
+const uptimeValue = document.querySelector('#uptime-value');
+const playersValue = document.querySelector('#players-value');
+const playersDetail = document.querySelector('#players-detail');
+const playersBadge = document.querySelector('#players-badge');
+const playersList = document.querySelector('#players-list');
+const settingsForm = document.querySelector('.settings-form');
+const deleteForm = document.querySelector('.delete-form');
+const filesBody = document.querySelector('#files-body');
+const filesPath = document.querySelector('#files-path');
+const filesError = document.querySelector('#files-error');
+const canManageFiles = {{ "true" if can_manage else "false" }};
+const csrfToken = {{ request.state.csrf_token|tojson }};
+let currentFilePath = '';
+const tabButtons = [...document.querySelectorAll('[data-tab]')];
+const tabPanels = [...document.querySelectorAll('[data-tab-panel]')];
+let actionPending = false;
+let minecraftReady = false;
+let startedAt = null;
+let installationComplete = {{ "true" if server.installation_state and server.installation_state.value == "completed" else "false" }};
+
+function selectTab(name, updateHash = true) {
+  const selected = tabButtons.find(button => button.dataset.tab === name) || tabButtons[0];
+  if (!selected) return;
+  tabButtons.forEach(button => {
+    const active = button === selected;
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+    button.tabIndex = active ? 0 : -1;
+  });
+  tabPanels.forEach(panel => panel.classList.toggle('hidden', panel.dataset.tabPanel !== selected.dataset.tab));
+  if (updateHash) history.replaceState(null, '', `#${selected.dataset.tab}`);
+  if (selected.dataset.tab === 'console') {
+    requestAnimationFrame(() => {
+      output.scrollTop = output.scrollHeight;
+      if (!commandInput.disabled) commandInput.focus();
+    });
+  }
+}
+
+tabButtons.forEach(button => button.addEventListener('click', () => selectTab(button.dataset.tab)));
+window.addEventListener('hashchange', () => selectTab(location.hash.slice(1), false));
+selectTab(location.hash.slice(1) || 'overview', false);
+
+const installStages = ['resolving', 'downloading', 'verifying', 'installing'];
+function renderInstallation(data) {
+  if (!installationCard) return;
+  const title = installationCard.querySelector('#install-title');
+  const detail = installationCard.querySelector('#install-detail');
+  const percentLabel = installationCard.querySelector('#install-percent');
+  const bar = installationCard.querySelector('#install-bar');
+  const stageIndex = installStages.indexOf(data.state);
+  let percent = {queued: 3, resolving: 10, verifying: 86, installing: 95, completed: 100}[data.state] ?? 0;
+  if (data.state === 'downloading' && data.total_bytes) {
+    percent = 10 + Math.round((data.bytes_downloaded / data.total_bytes) * 72);
+  }
+  title.textContent = data.state === 'completed' ? ui.readyToStart : data.state.replaceAll('_', ' ');
+  percentLabel.textContent = data.state === 'failed' ? ui.failed : `${percent}%`;
+  percentLabel.className = `status ${data.state === 'failed' ? 'state-error' : ''}`;
+  bar.style.width = `${percent}%`;
+  bar.classList.toggle('failed', data.state === 'failed');
+  installationCard.querySelectorAll('[data-install-step]').forEach((step, index) => {
+    step.classList.toggle('active', index <= stageIndex || data.state === 'completed');
+  });
+  if (data.state === 'failed') {
+    detail.textContent = data.error_message || ui.installationFailed;
+    detail.className = 'error';
+  } else if (data.state === 'downloading' && data.total_bytes) {
+    detail.textContent = `${humanSize(data.bytes_downloaded)} of ${humanSize(data.total_bytes)} downloaded`;
+  } else if (data.state === 'completed') {
+    installationComplete = true;
+    detail.textContent = `Minecraft ${data.installed_version} is installed. You can start the server now.`;
+    document.querySelector('#installed-version').textContent = data.installed_version || '—';
+    document.querySelector('#installed-java').textContent = data.java_version || '—';
+    startForm.classList.remove('hidden');
+    installationCard.closest('.server-layout').classList.add('install-complete');
+    showNotice(ui.installationCompleted);
+  } else {
+    detail.textContent = ui.installationBackground;
+  }
+}
+
+async function pollInstallation() {
+  if (!installationCard) return;
+  try {
+    const response = await fetch('/api/v1/servers/{{ server.id }}/installation');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Installation status unavailable');
+    renderInstallation(data);
+    if (!['completed', 'failed'].includes(data.state)) setTimeout(pollInstallation, 1000);
+  } catch (error) {
+    installationCard.querySelector('#install-detail').textContent = ui.reconnectingInstallation;
+    setTimeout(pollInstallation, 2500);
+  }
+}
+pollInstallation();
+
+function humanSize(bytes) {
+  if (bytes === null) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function fileAction(label, handler, className = 'secondary') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener('click', handler);
+  return button;
+}
+
+async function loadFiles(path = '') {
+  filesError.classList.add('hidden');
+  try {
+    const response = await fetch(`/servers/{{ server.id }}/files?path=${encodeURIComponent(path)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Files could not be loaded');
+    currentFilePath = data.path;
+    filesPath.textContent = `/${data.path}`;
+    document.querySelectorAll('.file-parent').forEach(input => { input.value = data.path; });
+    document.querySelector('#files-up').disabled = !data.path;
+    filesBody.replaceChildren();
+    if (!data.entries.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 3;
+      cell.textContent = ui.emptyDirectory;
+      row.appendChild(cell);
+      filesBody.appendChild(row);
+    }
+    data.entries.forEach(entry => {
+      const row = document.createElement('tr');
+      const nameCell = document.createElement('td');
+      const name = document.createElement(entry.is_directory ? 'button' : 'span');
+      name.textContent = `${entry.is_directory ? '📁' : '📄'} ${entry.name}`;
+      if (entry.is_directory) {
+        name.type = 'button';
+        name.className = 'file-name';
+        name.addEventListener('click', () => loadFiles(entry.path));
+      }
+      nameCell.appendChild(name);
+      const sizeCell = document.createElement('td');
+      sizeCell.textContent = humanSize(entry.size);
+      const actionCell = document.createElement('td');
+      actionCell.className = 'file-row-actions';
+      if (!entry.is_directory) {
+        const download = document.createElement('a');
+        download.className = 'mini-button';
+        download.textContent = ui.download;
+        download.href = `/servers/{{ server.id }}/files/download?path=${encodeURIComponent(entry.path)}`;
+        actionCell.appendChild(download);
+        if (canManageFiles && entry.editable) actionCell.appendChild(fileAction(ui.edit, () => editFile(entry.path)));
+        if (canManageFiles && entry.path.startsWith('plugins/') && (entry.name.endsWith('.jar') || entry.name.endsWith('.jar.disabled'))) {
+          const enabling = entry.name.endsWith('.disabled');
+          actionCell.appendChild(fileAction(enabling ? ui.enable : ui.disable, () => togglePlugin(entry.path, enabling)));
+        }
+      }
+      if (canManageFiles) actionCell.appendChild(fileAction(ui.delete, () => deleteFile(entry.path), 'danger mini-danger'));
+      row.append(nameCell, sizeCell, actionCell);
+      filesBody.appendChild(row);
+    });
+  } catch (error) {
+    filesError.textContent = error.message;
+    filesError.classList.remove('hidden');
+  }
+}
+
+document.querySelector('#files-up').addEventListener('click', () => {
+  const parts = currentFilePath.split('/').filter(Boolean);
+  parts.pop();
+  loadFiles(parts.join('/'));
+});
+
+async function submitFileForm(form) {
+  const button = form.querySelector('button[type="submit"]');
+  const isEditor = form.id === 'text-editor';
+  button.disabled = true;
+  try {
+    const response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'File operation failed');
+    showNotice(data.message);
+    if (isEditor) {
+      form.querySelector('.editor-state').textContent = ui.saved;
+    } else {
+      form.reset();
+    }
+    document.querySelectorAll('.file-parent').forEach(input => { input.value = currentFilePath; });
+    await loadFiles(currentFilePath);
+  } catch (error) {
+    showNotice(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+['#file-upload-form', '#mkdir-form', '#plugin-upload-form'].forEach(selector => {
+  const form = document.querySelector(selector);
+  if (form) form.addEventListener('submit', event => { event.preventDefault(); submitFileForm(form); });
+});
+
+async function editFile(path) {
+  try {
+    const response = await fetch(`/servers/{{ server.id }}/files/text?path=${encodeURIComponent(path)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'File could not be opened');
+    const editor = document.querySelector('#text-editor');
+    editor.querySelector('#editor-path').value = path;
+    editor.querySelector('#editor-title').textContent = `Edit ${path}`;
+    editor.querySelector('textarea').value = data.content;
+    editor.querySelector('.editor-state').textContent = '';
+    editor.classList.remove('hidden');
+    editor.scrollIntoView({behavior: 'smooth'});
+  } catch (error) { showNotice(error.message, true); }
+}
+
+const textEditor = document.querySelector('#text-editor');
+if (textEditor) {
+  textEditor.addEventListener('submit', event => { event.preventDefault(); submitFileForm(textEditor); });
+  document.querySelector('#editor-close').addEventListener('click', () => textEditor.classList.add('hidden'));
+}
+
+async function fileMutation(url, values) {
+  const body = new FormData();
+  body.set('csrf_token', csrfToken);
+  Object.entries(values).forEach(([key, value]) => body.set(key, value));
+  const response = await fetch(url, {method: 'POST', body});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || 'File operation failed');
+  showNotice(data.message);
+  await loadFiles(currentFilePath);
+}
+
+async function deleteFile(path) {
+  if (!window.confirm(`Move ${path} to the Talos trash?`)) return;
+  try { await fileMutation(`/servers/{{ server.id }}/files/delete`, {path}); }
+  catch (error) { showNotice(error.message, true); }
+}
+
+async function togglePlugin(path, enabled) {
+  try { await fileMutation(`/servers/{{ server.id }}/plugins/toggle`, {path, enabled: String(enabled)}); }
+  catch (error) { showNotice(error.message, true); }
+}
+
+loadFiles();
+
+function formatBytes(bytes) {
+  if (bytes === null || bytes === undefined) return '—';
+  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours || days) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  return parts.join(' ');
+}
+
+function updateUptime() {
+  uptimeValue.textContent = startedAt ? formatDuration((Date.now() - startedAt.getTime()) / 1000) : '—';
+}
+setInterval(updateUptime, 1000);
+
+function showNotice(message, error = false) {
+  window.talosToast(message, error);
+}
+
+if (notice.dataset.initialMessage) {
+  window.addEventListener('DOMContentLoaded', () => showNotice(notice.dataset.initialMessage));
+}
+
+async function submitWithoutReload(form) {
+  if (actionPending) return;
+  actionPending = true;
+  const isStart = form.classList.contains('start-action');
+  const isStop = form.classList.contains('stop-action');
+  const isRestart = form.classList.contains('restart-action');
+  const button = form.querySelector('button');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = form.classList.contains('command-form') ? ui.sending : ui.working;
+  if (isStart || isStop || isRestart) {
+    const transition = isStart ? 'starting' : (isStop ? 'stopping' : 'restarting');
+    runtimeBadge.textContent = transition;
+    runtimeBadge.className = `status state-${transition}`;
+  }
+  try {
+    const response = await fetch(form.action, {
+      method: 'POST',
+      headers: {'X-Talos-Async': 'true'},
+      body: new FormData(form)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'The operation failed');
+    showNotice(data.message);
+    if (form.classList.contains('command-form')) form.reset();
+  } catch (error) {
+    showNotice(error.message, true);
+  } finally {
+    actionPending = false;
+    button.disabled = form.classList.contains('command-form') && !minecraftReady;
+    button.textContent = original;
+  }
+}
+
+document.querySelectorAll('.runtime-action, .command-form').forEach(form => {
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    submitWithoutReload(form);
+  });
+});
+if (settingsForm) settingsForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = settingsForm.querySelector('button');
+  const state = settingsForm.querySelector('.settings-state');
+  button.disabled = true;
+  state.textContent = ui.saving;
+  try {
+    const response = await fetch(settingsForm.action, {
+      method: 'POST',
+      headers: {'X-Talos-Async': 'true'},
+      body: new FormData(settingsForm)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Settings could not be saved');
+    state.textContent = ui.savedRestart;
+    showNotice(data.message);
+    document.querySelector('#server-port').textContent = data.host_port;
+    document.querySelector('#server-memory').textContent = `${data.memory_mb} MB`;
+    const address = `localhost:${data.host_port}`;
+    document.querySelector('#server-address').textContent = address;
+    document.querySelector('[data-copy]').dataset.copy = address;
+  } catch (error) {
+    state.textContent = error.message;
+    showNotice(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+if (deleteForm) {
+  const confirmation = deleteForm.querySelector('input[name="confirmation"]');
+  const deleteButton = deleteForm.querySelector('button');
+  confirmation.addEventListener('input', () => {
+    deleteButton.disabled = confirmation.value !== deleteForm.dataset.serverName;
+  });
+  deleteForm.addEventListener('submit', event => {
+    if (!window.confirm('Delete this server from Talos Panel? Game files will be archived.')) {
+      event.preventDefault();
+    } else {
+      deleteButton.disabled = true;
+      deleteButton.textContent = 'Deleting…';
+    }
+  });
+}
+const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+const socket = new WebSocket(`${protocol}://${location.host}/servers/{{ server.id }}/console`);
+socket.onmessage = event => {
+  const data = JSON.parse(event.data);
+  output.textContent = data.logs || (data.state === 'running' ? 'Server is starting…' : 'No logs yet. Start the server to see its console.');
+  output.scrollTop = output.scrollHeight;
+  statusText.textContent = data.state === 'running' ? ui.liveOutput : `Container: ${data.state.replace('_', ' ')}`;
+  runtimeBadge.textContent = data.state.replace('_', ' ');
+  runtimeBadge.className = `status state-${data.state}`;
+  sidebarRuntime.textContent = data.ready ? 'online' : data.state.replace('_', ' ');
+  startForm.classList.toggle('hidden', data.state === 'running' || !installationComplete);
+  restartForm.classList.toggle('hidden', data.state !== 'running');
+  stopForm.classList.toggle('hidden', data.state !== 'running');
+  readyBadge.textContent = data.ready ? ui.minecraftReady : ui.notReady;
+  readyBadge.className = `status ${data.ready ? 'ready' : ''}`;
+  minecraftReady = data.ready;
+  commandInput.disabled = !data.ready || actionPending;
+  commandButton.disabled = !data.ready || actionPending;
+  cpuValue.textContent = data.cpu_percent === null ? '—' : `${data.cpu_percent.toFixed(1)}%`;
+  memoryValue.textContent = formatBytes(data.memory_bytes);
+  memoryDetail.textContent = data.memory_limit_bytes ? `of ${formatBytes(data.memory_limit_bytes)}` : 'Container memory';
+  startedAt = data.started_at ? new Date(data.started_at) : null;
+  updateUptime();
+  const playerCountKnown = data.players_online !== null;
+  playersValue.textContent = playerCountKnown ? `${data.players_online} / ${data.players_max}` : '—';
+  playersBadge.textContent = playerCountKnown ? `${data.players_online} online` : ui.unavailable;
+  playersDetail.textContent = playerCountKnown ? `Maximum ${data.players_max}` : (data.ready ? 'Refreshing…' : 'Waiting for server');
+  playersList.replaceChildren();
+  if (data.players.length) {
+    data.players.forEach(name => {
+      const item = document.createElement('span');
+      item.className = 'player-chip';
+      item.textContent = name;
+      playersList.appendChild(item);
+    });
+  } else {
+    const empty = document.createElement('span');
+    empty.className = 'hint';
+    empty.textContent = playerCountKnown ? ui.noPlayers : ui.playerDataUnavailable;
+    playersList.appendChild(empty);
+  }
+};
+socket.onclose = () => { statusText.textContent = ui.consoleDisconnected; };
+document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
+  await navigator.clipboard.writeText(button.dataset.copy);
+  button.textContent = ui.copied;
+}));
+</script>
+{% endblock %}

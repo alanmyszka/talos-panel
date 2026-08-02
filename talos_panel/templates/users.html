@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ t("Users") }} · Talos Panel{% endblock %}
+{% block content %}
+<a href="/">← {{ t("Servers") }}</a><div class="title-row"><div><h1>{{ t("Users") }}</h1><p>{{ t("Create trusted accounts and revoke their sessions.") }}</p></div></div>
+<section class="server-layout"><div class="card"><h2>{{ t("Accounts") }}</h2>{% for user in users %}<div class="user-row"><div><strong>{{ user.email }}</strong><p>{{ user.role.value }} · {{ "active" if user.is_active else "disabled" }}</p></div><form method="post" action="/admin/users/{{ user.id }}/sessions/revoke"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="secondary" type="submit">{{ t("Revoke sessions") }}</button></form></div>{% endfor %}</div>
+<form method="post" action="/admin/users" class="card form"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><h2>{{ t("Create trusted user") }}</h2><label>Email<input type="email" name="email" required maxlength="320"></label><label>{{ t("Temporary password") }}<input type="password" name="password" required minlength="12" maxlength="256"></label><label>{{ t("Global role") }}<select name="role"><option value="user">{{ t("User") }}</option><option value="admin">{{ t("Administrator") }}</option></select></label><button type="submit">{{ t("Create user") }}</button></form></section>
+<section class="card"><h2>{{ t("Recent audit events") }}</h2><div class="audit-list">{% for event in events %}<div><code>{{ event.created_at }}</code> <strong>{{ event.action }}</strong> <span>{{ event.details or "" }}</span></div>{% else %}<p>{{ t("No events yet.") }}</p>{% endfor %}</div></section>
+{% endblock %}

@@ -1,0 +1,1 @@
+"""Talos Panel application."""

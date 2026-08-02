@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ t("Initial setup") }} · Talos Panel{% endblock %}
+{% block content %}
+<section class="auth-card card"><p class="eyebrow">{{ t("INITIAL SETUP") }}</p><h1>{{ t("Create the administrator") }}</h1><p>{{ t("This account will have full control of Talos Panel and every managed server.") }}</p>
+<form method="post" action="/setup" class="form auth-form"><label>Email<input type="email" name="email" maxlength="320" required autocomplete="username"></label><label>{{ t("Password") }}<input type="password" name="password" minlength="12" maxlength="256" required autocomplete="new-password"></label><p class="hint">{{ t("Use at least 12 characters. The password is stored using Argon2id.") }}</p><button type="submit">{{ t("Create administrator") }}</button></form></section>
+{% endblock %}
