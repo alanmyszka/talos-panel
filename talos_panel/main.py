@@ -11,6 +11,7 @@ from talos_panel.bootstrap import ensure_secret
 from talos_panel.config import get_settings
 from talos_panel.db import SessionFactory
 from talos_panel.install_service import InstallationManager
+from talos_panel.operations_service import OperationsManager
 from talos_panel.runtime import DockerRuntime
 from talos_panel.schemas import Health
 from talos_panel.web import router as web_router
@@ -22,10 +23,15 @@ async def lifespan(app: FastAPI):
     app.state.secret_key = ensure_secret(settings.secret_file)
     app.state.runtime = DockerRuntime(settings)
     app.state.installation_manager = InstallationManager(settings, SessionFactory)
+    app.state.operations_manager = OperationsManager(
+        settings, SessionFactory, app.state.runtime
+    )
     await app.state.installation_manager.start()
+    await app.state.operations_manager.start()
     try:
         yield
     finally:
+        await app.state.operations_manager.stop()
         await app.state.installation_manager.stop()
 
 

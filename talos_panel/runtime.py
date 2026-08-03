@@ -144,10 +144,22 @@ class DockerRuntime:
                 "io.talos-panel.memory-mb": str(server.memory_mb),
                 "io.talos-panel.host-port": str(server.host_port),
             },
-            restart_policy={"Name": "unless-stopped"},
+            restart_policy={"Name": "no"},
             stdin_open=True,
         )
         return container.id, "running"
+
+    async def use_panel_restart_policy(self, server: MinecraftServer) -> None:
+        def configure() -> None:
+            try:
+                container = self._managed_container(server.id)
+            except NotFound:
+                return
+            policy = container.attrs.get("HostConfig", {}).get("RestartPolicy", {})
+            if policy.get("Name") != "no":
+                container.update(restart_policy={"Name": "no"})
+
+        await asyncio.to_thread(configure)
 
     async def stop(self, server: MinecraftServer) -> tuple[str | None, str]:
         def stop() -> tuple[str | None, str]:

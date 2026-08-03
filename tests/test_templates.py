@@ -253,3 +253,84 @@ def test_ui_polish_uses_balanced_dashboard_branding_and_static_cards() -> None:
     assert stylesheet.count("padding-top: var(--space-8)") >= 1
     assert stylesheet.count("padding-bottom: var(--space-8)") >= 1
     assert ".server-workspace .card:hover" in stylesheet
+
+
+def test_server_heading_avoids_duplicate_metadata_and_version_includes_software() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    assert "{{ server.game_version }} · localhost:{{ server.host_port }}" not in detail
+    assert "{{ server.server_type.value|title }} {{ server.installed_version }}" in detail
+    assert "const serverSoftware" in detail
+    assert "`${serverSoftware} ${data.installed_version}`" in detail
+
+
+def test_console_header_and_server_details_avoid_redundant_labels_and_rules() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert 'id="console-status"' not in detail
+    assert "Live output" not in detail
+    assert "Minecraft ready" not in detail
+    assert 't("Console ready")' in detail
+    assert ".details div:last-child" in stylesheet
+
+
+def test_backups_have_a_dedicated_safe_management_tab() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert 'data-tab="backups"' in detail
+    assert 'data-tab-panel="backups"' in detail
+    assert 'action="/servers/{{ server.id }}/backups"' in detail
+    assert "backup-restore-form" in detail
+    assert "backup-delete-form" in detail
+    assert "backup-requires-stopped" in detail
+    assert ".backup-list" in stylesheet
+
+
+def test_players_have_profiles_and_async_administration_actions() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    web = Path("talos_panel/web.py").read_text(encoding="utf-8")
+    assert 'data-tab="players"' in detail
+    assert 'data-tab-panel="players"' in detail
+    assert "loadPlayerProfiles" in detail
+    assert "playerTableBody.addEventListener('click'" in detail
+    assert "/players/${encodeURIComponent(button.dataset.player)}/action" in detail
+    assert ".player-table" in stylesheet
+    assert "PLAYER_ACTION_COMMANDS" in web
+    assert 'f"player.{action}"' in web
+    assert '/players/${encodeURIComponent(player.uuid)}/avatar' in detail
+    assert ".player-avatar img" in stylesheet
+
+
+def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    web = Path("talos_panel/web.py").read_text(encoding="utf-8")
+    operations = Path("talos_panel/operations_service.py").read_text(encoding="utf-8")
+    assert 'data-tab="updates"' in detail
+    assert 'data-tab="monitoring"' in detail
+    assert 'class="backup-policy"' in detail
+    assert "Backup and update" in detail
+    assert "metrics-chart" in detail
+    assert "create_backup" in web
+    assert "restore_backup" in web
+    assert "server.auto_restart" in operations
+    assert "save-all flush" in operations
+
+
+def test_account_has_two_factor_sessions_and_security_review() -> None:
+    account = Path("talos_panel/templates/account.html").read_text(encoding="utf-8")
+    login = Path("talos_panel/templates/login.html").read_text(encoding="utf-8")
+    users = Path("talos_panel/templates/users.html").read_text(encoding="utf-8")
+    assert 'action="/account/2fa"' in account
+    assert "totp_code" in login
+    assert "Active sessions" in account
+    assert "/account/sessions/{{ session.id }}/revoke" in account
+    assert "Security review" in users
+    assert "audit_action" in users
+
+
+def test_stop_intent_is_persisted_before_stopping_container() -> None:
+    web = Path("talos_panel/web.py").read_text(encoding="utf-8")
+    stop_handler = web[web.index("async def stop_server_ui") : web.index("async def restart_server_ui")]
+    assert stop_handler.index("server.desired_state = DesiredState.STOPPED") < stop_handler.index(
+        "await runtime.stop(server)"
+    )

@@ -65,6 +65,8 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), default=UserRole.USER)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     memberships: Mapped[list["ServerMember"]] = relationship(back_populates="user")
     sessions: Mapped[list["UserSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -123,6 +125,13 @@ class MinecraftServer(TimestampMixin, Base):
     )
     installed_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     java_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    backup_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    backup_interval_hours: Mapped[int] = mapped_column(Integer, default=24)
+    backup_retention: Mapped[int] = mapped_column(Integer, default=7)
+    next_backup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auto_restart: Mapped[bool] = mapped_column(Boolean, default=False)
+    restart_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_runtime_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     members: Mapped[list["ServerMember"]] = relationship(
         back_populates="server", cascade="all, delete-orphan"
     )
@@ -130,6 +139,12 @@ class MinecraftServer(TimestampMixin, Base):
         back_populates="server", cascade="all, delete-orphan"
     )
     installation_jobs: Mapped[list["InstallationJob"]] = relationship(
+        back_populates="server", cascade="all, delete-orphan"
+    )
+    update_jobs: Mapped[list["ServerUpdate"]] = relationship(
+        back_populates="server", cascade="all, delete-orphan"
+    )
+    metric_samples: Mapped[list["MetricSample"]] = relationship(
         back_populates="server", cascade="all, delete-orphan"
     )
 
@@ -188,3 +203,38 @@ class Backup(TimestampMixin, Base):
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     server: Mapped[MinecraftServer] = relationship(back_populates="backups")
+
+
+class ServerUpdate(TimestampMixin, Base):
+    __tablename__ = "server_updates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("minecraft_servers.id", ondelete="CASCADE"), index=True
+    )
+    backup_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("backups.id", ondelete="SET NULL"), nullable=True
+    )
+    from_version: Mapped[str] = mapped_column(String(32))
+    to_version: Mapped[str] = mapped_column(String(32))
+    state: Mapped[str] = mapped_column(String(32))
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    server: Mapped[MinecraftServer] = relationship(back_populates="update_jobs")
+
+
+class MetricSample(Base):
+    __tablename__ = "metric_samples"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("minecraft_servers.id", ondelete="CASCADE"), index=True
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    runtime_state: Mapped[str] = mapped_column(String(32))
+    cpu_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    memory_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    players_online: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    server: Mapped[MinecraftServer] = relationship(back_populates="metric_samples")

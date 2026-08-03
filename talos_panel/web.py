@@ -1,7 +1,8 @@
 import asyncio
 import re
+import shutil
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import (
@@ -23,6 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
 from talos_panel.auth import load_identity, record_audit, require_admin, require_csrf, require_user
+from talos_panel.avatar_service import AvatarError, get_player_avatar
+from talos_panel.backup_service import (
+    BackupError,
+    create_backup,
+    delete_backup,
+    resolve_backup_file,
+    restore_backup,
+)
 from talos_panel.config import get_settings
 from talos_panel.db import SessionFactory, get_session
 from talos_panel.file_service import (
@@ -45,20 +54,30 @@ from talos_panel.i18n import (
     translate,
 )
 from talos_panel.install_service import InstallationManager
-from talos_panel.installer import ArtifactResolver, InstallationError
+from talos_panel.installer import (
+    ArtifactResolver,
+    InstallationError,
+    JarDownloader,
+    java_version_for,
+)
 from talos_panel.minecraft_status import MinecraftStatusError, query_minecraft_status
 from talos_panel.models import (
+    AuditEvent,
+    Backup,
     DesiredState,
     InstallationJob,
     InstallationState,
+    MetricSample,
     MinecraftServer,
     ServerMember,
     ServerRole,
     ServerType,
+    ServerUpdate,
     User,
     UserRole,
 )
 from talos_panel.permissions import accessible_servers, can_manage_server, require_server_access
+from talos_panel.player_service import load_player_profiles, validate_player_name
 from talos_panel.runtime import DockerRuntime, normalize_console_command
 from talos_panel.schemas import ServerCreate
 from talos_panel.server_lifecycle import archive_server_directory
@@ -271,10 +290,14 @@ async def _server_and_job(server_id: uuid.UUID, session: AsyncSession, user, *, 
     return server, job
 
 
-async def _require_stopped(runtime: DockerRuntime, server: MinecraftServer) -> None:
+async def _require_stopped(
+    runtime: DockerRuntime,
+    server: MinecraftServer,
+    message: str = "Stop the server before changing its files",
+) -> None:
     _, state = await runtime.status(server)
     if state == "running":
-        raise HTTPException(status_code=409, detail="Stop the server before changing its files")
+        raise HTTPException(status_code=409, detail=message)
 
 
 def _file_error(exc: FileServiceError) -> HTTPException:
@@ -301,6 +324,62 @@ async def server_detail(
     users = []
     memberships = []
     member_rows = []
+    backups = []
+    updates = []
+    metrics = []
+    disk = None
+    runtime_events = []
+    if can_manage:
+        backups = list(
+            await session.scalars(
+                select(Backup)
+                .where(Backup.server_id == server.id)
+                .order_by(Backup.created_at.desc())
+            )
+        )
+        updates = list(
+            await session.scalars(
+                select(ServerUpdate)
+                .where(ServerUpdate.server_id == server.id)
+                .order_by(ServerUpdate.created_at.desc())
+                .limit(20)
+            )
+        )
+        metrics = list(
+            await session.scalars(
+                select(MetricSample)
+                .where(
+                    MetricSample.server_id == server.id,
+                    MetricSample.recorded_at >= datetime.now(UTC) - timedelta(hours=24),
+                )
+                .order_by(MetricSample.recorded_at)
+            )
+        )
+        try:
+            disk_usage = await asyncio.to_thread(shutil.disk_usage, runtime.data_path(server.id))
+            disk = {"free": disk_usage.free, "total": disk_usage.total}
+        except OSError:
+            disk = None
+        runtime_events = list(
+            await session.scalars(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.server_id == server.id,
+                    AuditEvent.action.in_(
+                        [
+                            "server.start",
+                            "server.stop",
+                            "server.restart",
+                            "server.crash_detected",
+                            "server.auto_restart",
+                            "server.auto_restart_failed",
+                        ]
+                    ),
+                )
+                .order_by(AuditEvent.created_at.desc())
+                .limit(30)
+            )
+        )
     if request.state.user.role is UserRole.ADMIN:
         users = list(await session.scalars(select(User).order_by(User.email)))
         memberships = list(
@@ -324,6 +403,21 @@ async def server_detail(
             "users": users,
             "memberships": memberships,
             "member_rows": member_rows,
+            "backups": backups,
+            "updates": updates,
+            "metrics": metrics,
+            "metric_data": [
+                {
+                    "time": sample.recorded_at.isoformat(),
+                    "cpu": sample.cpu_percent,
+                    "memory": sample.memory_bytes,
+                    "players": sample.players_online,
+                    "state": sample.runtime_state,
+                }
+                for sample in metrics
+            ],
+            "disk": disk,
+            "runtime_events": runtime_events,
             "can_manage": can_manage,
             "properties": properties,
             "settings_error": settings_error,
@@ -371,9 +465,14 @@ async def stop_server_ui(
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request))
     runtime: DockerRuntime = request.app.state.runtime
-    await runtime.stop(server)
     server.desired_state = DesiredState.STOPPED
     await session.commit()
+    try:
+        await runtime.stop(server)
+    except Exception:
+        server.desired_state = DesiredState.RUNNING
+        await session.commit()
+        raise
     await record_audit(request, "server.stop", server_id=server.id)
     if request.headers.get("X-Talos-Async") == "true":
         return JSONResponse({"ok": True, "message": ui_message(request, "Server stopped")})
@@ -428,6 +527,131 @@ async def server_command_ui(
     return RedirectResponse(f"/servers/{server.id}?message=Command+sent", status_code=303)
 
 
+@router.get("/servers/{server_id}/players")
+async def server_players(
+    request: Request, server_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
+    server, _ = await _server_and_job(server_id, session, require_user(request))
+    runtime: DockerRuntime = request.app.state.runtime
+    _, runtime_state = await runtime.status(server)
+    online_names: list[str] = []
+    online_count = None
+    if runtime_state == "running":
+        try:
+            minecraft = await query_minecraft_status(
+                get_settings().minecraft_status_host,
+                server.host_port,
+                get_settings().minecraft_status_timeout_seconds,
+            )
+            online_names = minecraft.sample_players
+            online_count = minecraft.online
+        except MinecraftStatusError:
+            pass
+    profiles = await asyncio.to_thread(
+        load_player_profiles, runtime.data_path(server.id), online_names
+    )
+    can_manage = await can_manage_server(session, request.state.user, server.id)
+    return JSONResponse(
+        {
+            "runtime_state": runtime_state,
+            "online_count": online_count,
+            "online_list_complete": online_count == len(online_names) if online_count is not None else False,
+            "can_manage": can_manage,
+            "players": [
+                {
+                    "name": player.name,
+                    "uuid": player.player_uuid,
+                    "online": player.online,
+                    "last_active": player.last_active.isoformat() if player.last_active else None,
+                    "play_time_seconds": player.play_time_seconds,
+                    "operator": player.operator,
+                    "whitelisted": player.whitelisted,
+                    "banned": player.banned,
+                }
+                for player in profiles
+            ],
+        }
+    )
+
+
+@router.get("/servers/{server_id}/players/{player_uuid}/avatar")
+async def player_avatar(
+    request: Request,
+    server_id: uuid.UUID,
+    player_uuid: str,
+    session: AsyncSession = Depends(get_session),
+):
+    await require_server_access(session, require_user(request), server_id)
+    settings = get_settings()
+    try:
+        avatar = await get_player_avatar(
+            player_uuid,
+            settings.minecraft_data_root / "cache" / "player-avatars",
+            settings.player_avatar_cache_hours,
+            settings.player_avatar_timeout_seconds,
+            settings.max_player_skin_bytes,
+        )
+    except AvatarError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        avatar,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+PLAYER_ACTION_COMMANDS = {
+    "kick": "kick {name}",
+    "ban": "ban {name}",
+    "pardon": "pardon {name}",
+    "whitelist_add": "whitelist add {name}",
+    "whitelist_remove": "whitelist remove {name}",
+    "op": "op {name}",
+    "deop": "deop {name}",
+}
+
+
+@router.post("/servers/{server_id}/players/{player_name}/action")
+async def player_action(
+    request: Request,
+    server_id: uuid.UUID,
+    player_name: str,
+    action: str = Form(),
+    reason: str = Form("", max_length=120),
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request))
+    if not await can_manage_server(session, request.state.user, server.id):
+        raise HTTPException(status_code=403, detail="Owner access required")
+    try:
+        name = validate_player_name(player_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    command_template = PLAYER_ACTION_COMMANDS.get(action)
+    if not command_template:
+        raise HTTPException(status_code=422, detail="Unsupported player action")
+    normalized_reason = reason.strip()
+    if any(ord(character) < 32 for character in normalized_reason):
+        raise HTTPException(status_code=422, detail="Reason contains unsupported characters")
+    command = command_template.format(name=name)
+    if action in {"kick", "ban"} and normalized_reason:
+        command = f"{command} {normalized_reason}"
+    runtime: DockerRuntime = request.app.state.runtime
+    try:
+        await runtime.send_command(server, command)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await record_audit(
+        request,
+        f"player.{action}",
+        server_id=server.id,
+        details=f"{name}: {normalized_reason}" if normalized_reason else name,
+    )
+    return JSONResponse({"ok": True, "message": ui_message(request, "Player action sent")})
+
+
 @router.post("/servers/{server_id}/members")
 async def add_server_member(
     request: Request,
@@ -479,6 +703,293 @@ async def remove_server_member(
             request, "server.member_remove", server_id=server.id, details=str(user_id)
         )
     return RedirectResponse(f"/servers/{server.id}#access", status_code=303)
+
+
+async def _server_backup(
+    session: AsyncSession, server_id: uuid.UUID, backup_id: uuid.UUID
+) -> Backup:
+    backup = await session.get(Backup, backup_id)
+    if backup is None or backup.server_id != server_id:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    return backup
+
+
+@router.post("/servers/{server_id}/backups")
+async def create_server_backup(
+    request: Request,
+    server_id: uuid.UUID,
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    runtime: DockerRuntime = request.app.state.runtime
+    await _require_stopped(runtime, server, "Stop the server before creating a backup")
+    settings = get_settings()
+    try:
+        artifact = await asyncio.to_thread(
+            create_backup,
+            runtime.data_path(server.id),
+            settings.minecraft_data_root,
+            server.id,
+        )
+    except BackupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    backup = Backup(
+        server_id=server.id,
+        file_name=artifact.path.name,
+        size_bytes=artifact.size_bytes,
+        checksum_sha256=artifact.checksum_sha256,
+    )
+    session.add(backup)
+    try:
+        await session.commit()
+    except Exception:
+        artifact.path.unlink(missing_ok=True)
+        raise
+    await record_audit(
+        request, "server.backup_create", server_id=server.id, details=str(backup.id)
+    )
+    return RedirectResponse(f"/servers/{server.id}#backups", status_code=303)
+
+
+@router.post("/servers/{server_id}/backup-policy")
+async def update_backup_policy(
+    request: Request,
+    server_id: uuid.UUID,
+    backup_enabled: bool = Form(False),
+    backup_interval_hours: int = Form(ge=1, le=720),
+    backup_retention: int = Form(ge=1, le=100),
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    server.backup_enabled = backup_enabled
+    server.backup_interval_hours = backup_interval_hours
+    server.backup_retention = backup_retention
+    server.next_backup_at = (
+        datetime.now(UTC) + timedelta(hours=backup_interval_hours) if backup_enabled else None
+    )
+    await session.commit()
+    await record_audit(request, "server.backup_policy", server_id=server.id)
+    return RedirectResponse(f"/servers/{server.id}#backups", status_code=303)
+
+
+@router.get("/servers/{server_id}/update-options")
+async def server_update_options(
+    request: Request, server_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(
+            timeout=settings.download_timeout_seconds,
+            headers={"User-Agent": settings.download_user_agent},
+        ) as client:
+            versions = await ArtifactResolver(client).versions(server.server_type)
+    except (httpx.HTTPError, InstallationError):
+        versions = []
+    return JSONResponse(
+        {
+            "current": server.installed_version,
+            "latest": versions[0] if versions else None,
+            "versions": versions[:50],
+        }
+    )
+
+
+@router.post("/servers/{server_id}/update")
+async def update_server_version(
+    request: Request,
+    server_id: uuid.UUID,
+    target_version: str = Form(min_length=2, max_length=32),
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    runtime: DockerRuntime = request.app.state.runtime
+    await _require_stopped(runtime, server, "Stop the server before updating it")
+    if not server.installed_version:
+        raise HTTPException(status_code=409, detail="Server is not installed")
+    settings = get_settings()
+    artifact = await asyncio.to_thread(
+        create_backup, runtime.data_path(server.id), settings.minecraft_data_root, server.id
+    )
+    backup = Backup(
+        server_id=server.id,
+        file_name=artifact.path.name,
+        size_bytes=artifact.size_bytes,
+        checksum_sha256=artifact.checksum_sha256,
+    )
+    session.add(backup)
+    await session.flush()
+    update = ServerUpdate(
+        server_id=server.id,
+        backup_id=backup.id,
+        from_version=server.installed_version,
+        to_version=target_version,
+        state="downloading",
+    )
+    session.add(update)
+    await session.commit()
+    try:
+        async with httpx.AsyncClient(
+            timeout=settings.download_timeout_seconds,
+            follow_redirects=True,
+            headers={"User-Agent": settings.download_user_agent},
+        ) as client:
+            resolved = await ArtifactResolver(client).resolve(server.server_type, target_version)
+
+            async def progress(downloaded: int, total: int | None) -> None:
+                return None
+
+            await JarDownloader(client, settings).download(
+                resolved, runtime.data_path(server.id) / "server.jar", progress
+            )
+        server.installed_version = resolved.version
+        server.game_version = resolved.version
+        server.java_version = resolved.java_version
+        update.state = "completed"
+        update.finished_at = datetime.now(UTC)
+        await session.commit()
+    except (InstallationError, httpx.HTTPError) as exc:
+        update.state = "failed"
+        update.error_message = str(exc)[:500]
+        update.finished_at = datetime.now(UTC)
+        await session.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await record_audit(
+        request,
+        "server.update",
+        server_id=server.id,
+        details=f"{update.from_version}->{update.to_version}",
+    )
+    return RedirectResponse(f"/servers/{server.id}#updates", status_code=303)
+
+
+@router.post("/servers/{server_id}/updates/{update_id}/rollback")
+async def rollback_server_update(
+    request: Request,
+    server_id: uuid.UUID,
+    update_id: uuid.UUID,
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    runtime: DockerRuntime = request.app.state.runtime
+    await _require_stopped(runtime, server, "Stop the server before rolling back")
+    update = await session.get(ServerUpdate, update_id)
+    if update is None or update.server_id != server.id or update.backup_id is None:
+        raise HTTPException(status_code=404, detail="Update recovery point not found")
+    backup = await _server_backup(session, server.id, update.backup_id)
+    await asyncio.to_thread(
+        restore_backup,
+        runtime.data_path(server.id),
+        get_settings().minecraft_data_root,
+        server.id,
+        backup.file_name,
+        get_settings().max_backup_restore_bytes,
+        backup.checksum_sha256,
+    )
+    server.installed_version = update.from_version
+    server.game_version = update.from_version
+    server.java_version = java_version_for(update.from_version)
+    update.state = "rolled_back"
+    await session.commit()
+    await record_audit(request, "server.update_rollback", server_id=server.id)
+    return RedirectResponse(f"/servers/{server.id}#updates", status_code=303)
+
+
+@router.get("/servers/{server_id}/backups/{backup_id}/download")
+async def download_server_backup(
+    request: Request,
+    server_id: uuid.UUID,
+    backup_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    backup = await _server_backup(session, server.id, backup_id)
+    try:
+        path = await asyncio.to_thread(
+            resolve_backup_file, get_settings().minecraft_data_root, server.id, backup.file_name
+        )
+    except BackupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, filename=backup.file_name, media_type="application/gzip")
+
+
+@router.post("/servers/{server_id}/backups/{backup_id}/restore")
+async def restore_server_backup(
+    request: Request,
+    server_id: uuid.UUID,
+    backup_id: uuid.UUID,
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    backup = await _server_backup(session, server.id, backup_id)
+    runtime: DockerRuntime = request.app.state.runtime
+    await _require_stopped(runtime, server, "Stop the server before restoring a backup")
+    settings = get_settings()
+    try:
+        safety_artifact = await asyncio.to_thread(
+            create_backup,
+            runtime.data_path(server.id),
+            settings.minecraft_data_root,
+            server.id,
+        )
+        safety_backup = Backup(
+            server_id=server.id,
+            file_name=safety_artifact.path.name,
+            size_bytes=safety_artifact.size_bytes,
+            checksum_sha256=safety_artifact.checksum_sha256,
+        )
+        session.add(safety_backup)
+        await session.commit()
+        await asyncio.to_thread(
+            restore_backup,
+            runtime.data_path(server.id),
+            settings.minecraft_data_root,
+            server.id,
+            backup.file_name,
+            settings.max_backup_restore_bytes,
+            backup.checksum_sha256,
+        )
+    except BackupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await record_audit(
+        request, "server.backup_restore", server_id=server.id, details=str(backup.id)
+    )
+    return RedirectResponse(f"/servers/{server.id}#backups", status_code=303)
+
+
+@router.post("/servers/{server_id}/backups/{backup_id}/delete")
+async def delete_server_backup(
+    request: Request,
+    server_id: uuid.UUID,
+    backup_id: uuid.UUID,
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    backup = await _server_backup(session, server.id, backup_id)
+    try:
+        await asyncio.to_thread(
+            delete_backup, get_settings().minecraft_data_root, server.id, backup.file_name
+        )
+    except BackupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.delete(backup)
+    await session.commit()
+    await record_audit(
+        request, "server.backup_delete", server_id=server.id, details=str(backup.id)
+    )
+    return RedirectResponse(f"/servers/{server.id}#backups", status_code=303)
 
 
 @router.post("/servers/{server_id}/settings")
@@ -540,6 +1051,24 @@ async def update_server_settings_ui(
             }
         )
     return RedirectResponse(f"/servers/{server.id}?message=Settings+saved", status_code=303)
+
+
+@router.post("/servers/{server_id}/restart-policy")
+async def update_restart_policy(
+    request: Request,
+    server_id: uuid.UUID,
+    auto_restart: bool = Form(False),
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    server.auto_restart = auto_restart
+    if not auto_restart:
+        server.restart_failures = 0
+    await session.commit()
+    await record_audit(request, "server.restart_policy", server_id=server.id)
+    return RedirectResponse(f"/servers/{server.id}#monitoring", status_code=303)
 
 
 @router.post("/servers/{server_id}/delete")

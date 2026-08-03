@@ -1,6 +1,8 @@
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pyotp
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -30,6 +32,7 @@ from talos_panel.models import (
     UserRole,
     UserSession,
 )
+from talos_panel.security_service import security_findings
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory="talos_panel/templates", context_processors=[template_context])
@@ -88,7 +91,12 @@ async def login_page(request: Request):
 
 
 @router.post("/login")
-async def login(request: Request, email: str = Form(), password: str = Form()):
+async def login(
+    request: Request,
+    email: str = Form(),
+    password: str = Form(),
+    totp_code: str = Form("", max_length=8),
+):
     require_same_origin(request)
     async with SessionFactory() as database:
         recent_failures = await database.scalar(
@@ -102,7 +110,17 @@ async def login(request: Request, email: str = Form(), password: str = Form()):
             raise HTTPException(status_code=429, detail="Too many login attempts; try again later")
         user = await database.scalar(select(User).where(User.email == email.strip().lower()))
         valid = verify_password(user.password_hash if user else DUMMY_HASH, password)
-        if not user or not valid or not user.is_active:
+        totp_valid = bool(
+            user
+            and (
+                not user.totp_enabled
+                or (
+                    user.totp_secret
+                    and pyotp.TOTP(user.totp_secret).verify(totp_code.strip(), valid_window=1)
+                )
+            )
+        )
+        if not user or not valid or not user.is_active or not totp_valid:
             database.add(
                 AuditEvent(action="auth.login_failed", ip_address=client_ip(request), details=email[:320])
             )
@@ -136,8 +154,83 @@ async def logout(request: Request, csrf_token: str = Form()):
 
 @router.get("/account", response_class=HTMLResponse)
 async def account_page(request: Request):
-    require_user(request)
-    return templates.TemplateResponse(request, "account.html", {"message": None})
+    user = require_user(request)
+    async with SessionFactory() as database:
+        stored = await database.get(User, user.id)
+        if stored is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not stored.totp_secret:
+            stored.totp_secret = pyotp.random_base32()
+            await database.commit()
+        sessions = list(
+            await database.scalars(
+                select(UserSession)
+                .where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None))
+                .order_by(UserSession.last_seen_at.desc())
+            )
+        )
+        provisioning_uri = pyotp.TOTP(stored.totp_secret).provisioning_uri(
+            name=stored.email, issuer_name="Talos Panel"
+        )
+        enabled = stored.totp_enabled
+        secret = stored.totp_secret
+    return templates.TemplateResponse(
+        request,
+        "account.html",
+        {
+            "message": None,
+            "sessions": sessions,
+            "totp_enabled": enabled,
+            "totp_secret": secret,
+            "totp_uri": provisioning_uri,
+        },
+    )
+
+
+@router.post("/account/2fa")
+async def update_two_factor(
+    request: Request,
+    action: str = Form(pattern=r"^(enable|disable)$"),
+    totp_code: str = Form(min_length=6, max_length=8),
+    csrf_token: str = Form(),
+):
+    user = require_user(request)
+    require_csrf(request, csrf_token)
+    async with SessionFactory() as database:
+        stored = await database.get(User, user.id)
+        if stored is None or not stored.totp_secret:
+            raise HTTPException(status_code=409, detail="Two-factor setup is not ready")
+        if not pyotp.TOTP(stored.totp_secret).verify(totp_code.strip(), valid_window=1):
+            raise HTTPException(status_code=422, detail="Invalid authentication code")
+        stored.totp_enabled = action == "enable"
+        if action == "disable":
+            stored.totp_secret = pyotp.random_base32()
+        await database.commit()
+    await record_audit(request, f"auth.2fa_{action}")
+    return RedirectResponse("/account", status_code=303)
+
+
+@router.post("/account/sessions/{session_id}/revoke")
+async def revoke_own_session(
+    request: Request, session_id: uuid.UUID, csrf_token: str = Form()
+):
+    user = require_user(request)
+    require_csrf(request, csrf_token)
+    if session_id == request.state.auth_session.id:
+        raise HTTPException(status_code=409, detail="Use log out to close the current session")
+    async with SessionFactory() as database:
+        session = await database.scalar(
+            select(UserSession).where(
+                UserSession.id == session_id,
+                UserSession.user_id == user.id,
+                UserSession.revoked_at.is_(None),
+            )
+        )
+        if session:
+            session.revoked_at = datetime.now(UTC)
+            await database.commit()
+    await record_audit(request, "auth.session_revoke", details=str(session_id))
+    return RedirectResponse("/account", status_code=303)
 
 
 @router.post("/account/password", response_class=HTMLResponse)
@@ -152,21 +245,11 @@ async def change_password(
     async with SessionFactory() as database:
         stored = await database.get(User, user.id)
         if stored is None or not verify_password(stored.password_hash, current_password):
-            return templates.TemplateResponse(
-                request,
-                "account.html",
-                {"message": ui_message(request, "Current password is incorrect"), "error": True},
-                status_code=400,
-            )
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
         try:
             stored.password_hash = hash_password(new_password)
         except ValueError as exc:
-            return templates.TemplateResponse(
-                request,
-                "account.html",
-                {"message": str(exc), "error": True},
-                status_code=422,
-            )
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         sessions = list(
             await database.scalars(
                 select(UserSession).where(
@@ -181,15 +264,11 @@ async def change_password(
             session.revoked_at = now
         await database.commit()
     await record_audit(request, "auth.password_change")
-    return templates.TemplateResponse(
-        request,
-        "account.html",
-        {"message": ui_message(request, "Password changed"), "error": False},
-    )
+    return RedirectResponse("/account", status_code=303)
 
 
 @router.get("/admin/users", response_class=HTMLResponse)
-async def users_page(request: Request):
+async def users_page(request: Request, audit_action: str = ""):
     require_admin(request)
     async with SessionFactory() as database:
         users = list(await database.scalars(select(User).order_by(User.created_at)))
@@ -205,13 +284,24 @@ async def users_page(request: Request):
         ).all()
         for server, membership in access_rows:
             access_by_user.setdefault(membership.user_id, []).append((server, membership))
+        event_query = select(AuditEvent)
+        if audit_action.strip():
+            event_query = event_query.where(AuditEvent.action.ilike(f"%{audit_action.strip()}%"))
         events = list(
-            await database.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(50))
+            await database.scalars(event_query.order_by(AuditEvent.created_at.desc()).limit(200))
         )
     return templates.TemplateResponse(
         request,
         "users.html",
-        {"users": users, "events": events, "access_by_user": access_by_user},
+        {
+            "users": users,
+            "events": events,
+            "access_by_user": access_by_user,
+            "audit_action": audit_action,
+            "security_findings": await asyncio.to_thread(
+                security_findings, get_settings(), request.app.state.runtime
+            ),
+        },
     )
 
 
