@@ -4,11 +4,9 @@
 <div id="action-notice" class="hidden" data-initial-message="{{ t(message) if message else '' }}"></div>
 
 <div class="server-shell"><aside class="server-sidebar">
-  <a class="sidebar-back" href="/">← {{ t("All servers") }}</a>
-  <div class="sidebar-server">
-    <span class="server-glyph">{{ server.name[:1]|upper }}</span>
-    <div><strong>{{ server.name }}</strong><small id="sidebar-runtime">{{ runtime_state|replace("_", " ") }}</small></div>
-  </div>
+  <a class="app-brand" href="/"><strong>Talos Panel</strong></a>
+  <div class="server-navigation">
+  <a class="server-home-link" href="/"><span></span>{{ t("Servers") }}</a>
 <nav class="server-tabs" role="tablist" aria-label="Server sections">
   <button type="button" role="tab" data-tab="overview" aria-controls="tab-overview" aria-selected="true"><span></span>{{ t("Dashboard") }}</button>
   <button type="button" role="tab" data-tab="console" aria-controls="tab-console" aria-selected="false"><span></span>{{ t("Console") }}</button>
@@ -17,18 +15,15 @@
   {% if request.state.user.role.value == "admin" %}<button type="button" role="tab" data-tab="access" aria-controls="tab-access" aria-selected="false"><span></span>{{ t("Access") }}</button>{% endif %}
   {% if can_manage %}<button class="danger-tab" type="button" role="tab" data-tab="danger" aria-controls="tab-danger" aria-selected="false"><span></span>{{ t("Danger zone") }}</button>{% endif %}
 </nav>
-<div class="sidebar-account">
-  <div class="language-switch"><form method="post" action="/language/en"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'en' %}active{% endif %}" type="submit">EN</button></form><form method="post" action="/language/pl"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'pl' %}active{% endif %}" type="submit">PL</button></form></div>
-  {% if request.state.user.role.value == "admin" %}<a href="/admin/users">{{ t("Users") }}</a>{% endif %}
-  <a href="/account">{{ request.state.user.email }}</a>
-  <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="link-button" type="submit">{{ t("Log out") }}</button></form>
-</div>
+  </div>
+{% include "_sidebar_utilities.html" %}
 </aside>
 <div class="server-workspace">
 <div class="title-row server-heading">
-  <div>
-    <h1>{{ server.name }}</h1>
-    <p>{{ server.server_type.value|title }} {{ server.game_version }} · localhost:{{ server.host_port }}</p>
+  <div class="server-heading-identity">
+    <span class="server-glyph">{{ server.name[:1]|upper }}</span>
+    <div><h1>{{ server.name }}</h1>
+    <p>{{ server.server_type.value|title }} {{ server.game_version }} · localhost:{{ server.host_port }}</p></div>
   </div>
   <div class="actions">
     <form class="runtime-action start-action{% if runtime_state == 'running' or not server.installation_state or server.installation_state.value != 'completed' %} hidden{% endif %}" method="post" action="/servers/{{ server.id }}/start"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button type="submit">{{ t("Start server") }}</button></form>
@@ -69,7 +64,7 @@
 
 <div id="tab-files" class="tab-panel hidden" data-tab-panel="files" role="tabpanel">
 <section class="card files-card">
-  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2><p>{{ t("Server files only. Symbolic links and protected Talos files are not exposed.") }}</p></div><span class="status">{% if can_manage %}{{ t("Read / write") }}{% else %}{{ t("Read only") }}{% endif %}</span></div>
+  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2></div><span class="status">{% if can_manage %}{{ t("Read / write") }}{% else %}{{ t("Read only") }}{% endif %}</span></div>
   {% if can_manage %}<p class="hint">{{ t("Stop the server before uploading, editing, creating, deleting, or changing plugins.") }}</p>{% endif %}
   <div class="file-toolbar">
     <button id="files-up" class="secondary" type="button">{{ t("Up") }}</button>
@@ -123,7 +118,7 @@
 
 {% if request.state.user.role.value == "admin" %}
 <div id="tab-access" class="tab-panel hidden" data-tab-panel="access" role="tabpanel">
-<section class="card"><h2>{{ t("Server access") }}</h2><p>{{ t("Owners can manage installation and operators can control the server and console.") }}</p><form method="post" action="/servers/{{ server.id }}/members" class="member-form"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><select name="user_id">{% for user in users %}<option value="{{ user.id }}">{{ user.email }}</option>{% endfor %}</select><select name="role"><option value="operator">{{ t("Operator") }}</option><option value="owner">{{ t("Owner") }}</option></select><button type="submit">{{ t("Add or update") }}</button></form></section>
+<section class="card access-card"><div class="section-heading"><div><h2>{{ t("Server access") }}</h2><p>{{ t("Owners can manage installation and operators can control the server and console.") }}</p></div></div><div class="access-grid"><div><h3>{{ t("People with access") }}</h3><div class="member-list">{% for user, membership in member_rows %}<div class="member-row"><div><strong>{{ user.email }}</strong><span>{{ t("Login enabled") if user.is_active else t("Login disabled") }}</span></div><div class="member-actions"><span class="access-badge">{{ t("Owner") if membership.role.value == "owner" else t("Operator") }}</span><form method="post" action="/servers/{{ server.id }}/members/{{ user.id }}/remove"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="link-button remove-access" type="submit">{{ t("Remove access") }}</button></form></div></div>{% else %}<div class="access-empty">{{ t("No users have been assigned to this server.") }}</div>{% endfor %}</div><p class="admin-access-note">{{ t("Global administrators always have full access and are not listed here.") }}</p></div><form method="post" action="/servers/{{ server.id }}/members" class="member-form"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><h3>{{ t("Assign access") }}</h3><label>{{ t("User") }}<select name="user_id">{% for user in users if user.role.value != "admin" %}<option value="{{ user.id }}">{{ user.email }}</option>{% endfor %}</select></label><label>{{ t("Server role") }}<select name="role"><option value="operator">{{ t("Operator") }}</option><option value="owner">{{ t("Owner") }}</option></select></label><div class="role-explainer"><p><strong>{{ t("Operator") }}</strong> — {{ t("can start and stop the server and use its console.") }}</p><p><strong>{{ t("Owner") }}</strong> — {{ t("can also manage settings, files and installation.") }}</p></div><button type="submit">{{ t("Add or update") }}</button></form></div></section>
 </div>
 {% endif %}
 
@@ -150,7 +145,6 @@
     <span>&gt;</span><input name="command" maxlength="256" autocomplete="off" placeholder="say Hello from Talos Panel" disabled>
     <button type="submit" disabled>{{ t("Send") }}</button>
   </form>
-  <p class="hint">{{ t("Commands are sent directly to Minecraft stdin. Do not include a leading slash.") }}</p>
 </section>
 </div>
 </div>
@@ -182,7 +176,6 @@ const startForm = document.querySelector('.start-action');
 const restartForm = document.querySelector('.restart-action');
 const stopForm = document.querySelector('.stop-action');
 const notice = document.querySelector('#action-notice');
-const sidebarRuntime = document.querySelector('#sidebar-runtime');
 const installationCard = document.querySelector('#installation');
 const cpuValue = document.querySelector('#cpu-value');
 const memoryValue = document.querySelector('#memory-value');
@@ -206,6 +199,10 @@ let actionPending = false;
 let minecraftReady = false;
 let startedAt = null;
 let installationComplete = {{ "true" if server.installation_state and server.installation_state.value == "completed" else "false" }};
+
+function consoleIsNearBottom() {
+  return output.scrollHeight - output.scrollTop - output.clientHeight <= 32;
+}
 
 function selectTab(name, updateHash = true) {
   const selected = tabButtons.find(button => button.dataset.tab === name) || tabButtons[0];
@@ -332,12 +329,12 @@ async function loadFiles(path = '') {
       sizeCell.textContent = humanSize(entry.size);
       const actionCell = document.createElement('td');
       actionCell.className = 'file-row-actions';
+      const download = document.createElement('a');
+      download.className = 'mini-button';
+      download.textContent = ui.download;
+      download.href = `/servers/{{ server.id }}/files/download?path=${encodeURIComponent(entry.path)}`;
+      actionCell.appendChild(download);
       if (!entry.is_directory) {
-        const download = document.createElement('a');
-        download.className = 'mini-button';
-        download.textContent = ui.download;
-        download.href = `/servers/{{ server.id }}/files/download?path=${encodeURIComponent(entry.path)}`;
-        actionCell.appendChild(download);
         if (canManageFiles && entry.editable) actionCell.appendChild(fileAction(ui.edit, () => editFile(entry.path)));
         if (canManageFiles && entry.path.startsWith('plugins/') && (entry.name.endsWith('.jar') || entry.name.endsWith('.jar.disabled'))) {
           const enabling = entry.name.endsWith('.disabled');
@@ -550,12 +547,13 @@ const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
 const socket = new WebSocket(`${protocol}://${location.host}/servers/{{ server.id }}/console`);
 socket.onmessage = event => {
   const data = JSON.parse(event.data);
+  const followConsole = consoleIsNearBottom();
+  const previousConsoleScroll = output.scrollTop;
   output.textContent = data.logs || (data.state === 'running' ? 'Server is starting…' : 'No logs yet. Start the server to see its console.');
-  output.scrollTop = output.scrollHeight;
+  output.scrollTop = followConsole ? output.scrollHeight : previousConsoleScroll;
   statusText.textContent = data.state === 'running' ? ui.liveOutput : `Container: ${data.state.replace('_', ' ')}`;
   runtimeBadge.textContent = data.state.replace('_', ' ');
   runtimeBadge.className = `status state-${data.state}`;
-  sidebarRuntime.textContent = data.ready ? 'online' : data.state.replace('_', ' ');
   startForm.classList.toggle('hidden', data.state === 'running' || !installationComplete);
   restartForm.classList.toggle('hidden', data.state !== 'running');
   stopForm.classList.toggle('hidden', data.state !== 'running');

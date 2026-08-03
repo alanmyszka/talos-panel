@@ -8,6 +8,7 @@ from fastapi import UploadFile
 from talos_panel.file_service import (
     FileServiceError,
     archive_path,
+    create_directory_archive,
     list_directory,
     read_text_file,
     resolve_server_path,
@@ -53,6 +54,38 @@ def test_listing_hides_protected_files_and_symlinks(tmp_path: Path) -> None:
 
     assert [entry.name for entry in entries] == ["world", "server.properties"]
     assert entries[1].editable is True
+
+
+def test_listing_calculates_directory_size_without_following_symlinks(tmp_path: Path) -> None:
+    directory = tmp_path / "world"
+    directory.mkdir()
+    (directory / "region.dat").write_bytes(b"region")
+    outside = tmp_path / "outside.dat"
+    outside.write_bytes(b"outside-content")
+    (directory / "linked.dat").symlink_to(outside)
+
+    entry = list_directory(tmp_path)[0]
+
+    assert entry.name == "world"
+    assert entry.size == 6
+
+
+def test_directory_download_creates_zip_and_ignores_symlinks(tmp_path: Path) -> None:
+    directory = tmp_path / "world"
+    (directory / "region").mkdir(parents=True)
+    (directory / "region" / "r.0.0.mca").write_bytes(b"region")
+    (directory / "empty").mkdir()
+    (directory / "unsafe").symlink_to(tmp_path)
+
+    archive_path, download_name = create_directory_archive(tmp_path, "world")
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            assert download_name == "world.zip"
+            assert "world/region/r.0.0.mca" in archive.namelist()
+            assert "world/empty/" in archive.namelist()
+            assert not any("unsafe" in name for name in archive.namelist())
+    finally:
+        archive_path.unlink()
 
 
 def test_text_edits_are_bounded_and_atomic(tmp_path: Path) -> None:

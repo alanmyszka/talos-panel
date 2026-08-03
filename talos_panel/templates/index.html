@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="dashboard-page">
 {% if request.query_params.get("message") %}<script>window.addEventListener('DOMContentLoaded', () => window.talosToast({{ t(request.query_params.get("message"))|tojson }}));</script>{% endif %}
 <div class="title-row dashboard-title"><div><p class="section-label">{{ t("Infrastructure") }}</p><h1>{{ t("Servers") }}</h1><p>{{ t("Install and manage Paper and Vanilla servers.") }}</p></div><a class="button" href="/servers/new">+ {{ t("New server") }}</a></div>
 <section class="server-list">
-<div class="server-list-head"><span>{{ t("Server") }}</span><span>{{ t("Address") }}</span><span>{{ t("Software") }}</span><span>{{ t("Status") }}</span></div>
+<div class="server-list-head"><span>{{ t("Server") }}</span><span>{{ t("Address") }}</span><span>{{ t("Software") }}</span><span>{{ t("Players") }}</span><span>{{ t("Uptime") }}</span><span>{{ t("Status") }}</span></div>
+<div class="server-list-body">
 {% for card in cards %}
   {% set server = card.server %}
   {% if not server.installation_state or server.installation_state.value != "completed" %}
@@ -16,12 +18,74 @@
   {% else %}
     {% set display_state = card.runtime_state|replace("_", " ") %}{% set state_class = card.runtime_state %}
   {% endif %}
-  <a class="server-row" href="/servers/{{ server.id }}">
+  <a class="server-row" href="/servers/{{ server.id }}" data-summary-url="/servers/{{ server.id }}/summary">
     <div class="server-card-identity"><span class="server-glyph">{{ server.name[:1]|upper }}</span><div><h2>{{ server.name }}</h2><p>{{ server.id }}</p></div></div>
     <code>localhost:{{ server.host_port }}</code>
     <span>{{ server.server_type.value|title }} {{ server.game_version }}</span>
-    <span class="status state-{{ state_class }}">{{ t(display_state) }}</span>
+    <span class="server-player-count">{% if card.runtime_state == "running" and card.players_online is not none %}{{ card.players_online }} / {{ card.players_max }}{% else %}—{% endif %}</span>
+    <span class="server-uptime"{% if card.started_at %} data-started-at="{{ card.started_at.isoformat() }}"{% endif %}>—</span>
+    <span class="status server-runtime-status state-{{ state_class }}">{{ t(display_state) }}</span>
   </a>
 {% else %}<div class="empty server-list-empty"><h2>{{ t("No servers yet") }}</h2><p>{{ t("Create the first server to begin installation.") }}</p><a class="button" href="/servers/new">{{ t("Create server") }}</a></div>{% endfor %}
+</div>
 </section>
+<script>
+(() => {
+  const labels = {
+    running: {{ t("running")|tojson }},
+    starting: {{ t("starting")|tojson }},
+    offline: {{ t("offline")|tojson }},
+    installing: {{ t("installing")|tojson }},
+    failed: {{ t("installation failed")|tojson }},
+    error: {{ t("Unavailable")|tojson }},
+  };
+  const formatUptime = seconds => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (days) return `${days}d ${hours}h`;
+    if (hours) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+  const updateUptimes = () => document.querySelectorAll('.server-uptime[data-started-at]').forEach(item => {
+    const startedAt = Date.parse(item.dataset.startedAt);
+    if (!Number.isNaN(startedAt)) item.textContent = formatUptime(Math.max(0, (Date.now() - startedAt) / 1000));
+  });
+  const refreshSummary = async row => {
+    try {
+      const response = await fetch(row.dataset.summaryUrl, {headers: {'Accept': 'application/json'}});
+      if (!response.ok) throw new Error('summary unavailable');
+      const data = await response.json();
+      const status = row.querySelector('.server-runtime-status');
+      let state;
+      if (data.installation_state === 'failed') state = 'failed';
+      else if (data.installation_state !== 'completed') state = 'installing';
+      else if (data.runtime_state === 'running') state = data.minecraft_ready ? 'running' : 'starting';
+      else if (['not_created', 'created', 'exited', 'dead'].includes(data.runtime_state)) state = 'offline';
+      else state = 'error';
+      status.textContent = labels[state];
+      status.className = `status server-runtime-status state-${state}`;
+      row.querySelector('.server-player-count').textContent = data.minecraft_ready
+        ? `${data.players_online} / ${data.players_max}` : '—';
+      const uptime = row.querySelector('.server-uptime');
+      if (data.started_at) uptime.dataset.startedAt = data.started_at;
+      else {
+        delete uptime.dataset.startedAt;
+        uptime.textContent = '—';
+      }
+      updateUptimes();
+    } catch (error) {
+      const status = row.querySelector('.server-runtime-status');
+      status.textContent = labels.error;
+      status.className = 'status server-runtime-status state-error';
+    }
+  };
+  const refreshSummaries = () => document.querySelectorAll('.server-row[data-summary-url]').forEach(refreshSummary);
+  updateUptimes();
+  refreshSummaries();
+  window.setInterval(updateUptimes, 30000);
+  window.setInterval(refreshSummaries, 10000);
+})();
+</script>
+</div>
 {% endblock %}

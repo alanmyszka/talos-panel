@@ -22,7 +22,14 @@ from talos_panel.auth import (
 from talos_panel.config import get_settings
 from talos_panel.db import SessionFactory
 from talos_panel.i18n import language_from_request, template_context, translate
-from talos_panel.models import AuditEvent, User, UserRole, UserSession
+from talos_panel.models import (
+    AuditEvent,
+    MinecraftServer,
+    ServerMember,
+    User,
+    UserRole,
+    UserSession,
+)
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory="talos_panel/templates", context_processors=[template_context])
@@ -186,10 +193,26 @@ async def users_page(request: Request):
     require_admin(request)
     async with SessionFactory() as database:
         users = list(await database.scalars(select(User).order_by(User.created_at)))
+        access_by_user: dict[uuid.UUID, list[tuple[MinecraftServer, ServerMember]]] = {
+            user.id: [] for user in users
+        }
+        access_rows = (
+            await database.execute(
+                select(MinecraftServer, ServerMember)
+                .join(ServerMember, ServerMember.server_id == MinecraftServer.id)
+                .order_by(MinecraftServer.name)
+            )
+        ).all()
+        for server, membership in access_rows:
+            access_by_user.setdefault(membership.user_id, []).append((server, membership))
         events = list(
             await database.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(50))
         )
-    return templates.TemplateResponse(request, "users.html", {"users": users, "events": events})
+    return templates.TemplateResponse(
+        request,
+        "users.html",
+        {"users": users, "events": events, "access_by_user": access_by_user},
+    )
 
 
 @router.post("/admin/users")

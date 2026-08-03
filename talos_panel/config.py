@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     minecraft_data_root: Path = Path("/data/servers")
     minecraft_host_data_root: Path = Path("/data/servers")
     minecraft_network: str = "talos-network"
+    minecraft_status_host: str = "host.docker.internal"
+    minecraft_status_timeout_seconds: float = 1.0
     download_timeout_seconds: float = 60.0
     max_server_jar_bytes: int = 200 * 1024 * 1024
     max_file_upload_bytes: int = 128 * 1024 * 1024

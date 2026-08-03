@@ -15,6 +15,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${BASE_DIR:-$PWD}/servers:/data/servers
       - ${BASE_DIR:-$PWD}/data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from talos_panel.auth import load_identity, record_audit, require_admin, require_csrf, require_user
 from talos_panel.config import get_settings
@@ -28,6 +29,7 @@ from talos_panel.file_service import (
     FileServiceError,
     archive_path,
     create_directory,
+    create_directory_archive,
     list_directory,
     read_text_file,
     resolve_server_path,
@@ -44,6 +46,7 @@ from talos_panel.i18n import (
 )
 from talos_panel.install_service import InstallationManager
 from talos_panel.installer import ArtifactResolver, InstallationError
+from talos_panel.minecraft_status import MinecraftStatusError, query_minecraft_status
 from talos_panel.models import (
     DesiredState,
     InstallationJob,
@@ -56,7 +59,7 @@ from talos_panel.models import (
     UserRole,
 )
 from talos_panel.permissions import accessible_servers, can_manage_server, require_server_access
-from talos_panel.runtime import DockerRuntime
+from talos_panel.runtime import DockerRuntime, normalize_console_command
 from talos_panel.schemas import ServerCreate
 from talos_panel.server_lifecycle import archive_server_directory
 from talos_panel.server_settings import (
@@ -105,24 +108,62 @@ def player_snapshot(logs: str) -> tuple[int | None, int | None, list[str]]:
     return int(match.group("online")), int(match.group("maximum")), names
 
 
+def minecraft_is_ready(runtime_state: str, logs: str) -> bool:
+    return runtime_state == "running" and (
+        "Done (" in logs or 'For help, type "help"' in logs
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, session: AsyncSession = Depends(get_session)):
     servers = await accessible_servers(session, require_user(request))
-    runtime: DockerRuntime = request.app.state.runtime
-
-    async def runtime_state(server: MinecraftServer) -> str:
-        try:
-            _, state = await runtime.status(server)
-            return state
-        except Exception:
-            return "error"
-
-    runtime_states = await asyncio.gather(*(runtime_state(server) for server in servers))
-    cards = [
-        {"server": server, "runtime_state": state}
-        for server, state in zip(servers, runtime_states, strict=True)
-    ]
+    cards = [{"server": server, "runtime_state": "loading"} for server in servers]
     return templates.TemplateResponse(request, "index.html", {"cards": cards})
+
+
+@router.get("/servers/{server_id}/summary")
+async def server_summary(
+    request: Request, server_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
+    server = await require_server_access(session, require_user(request), server_id)
+    runtime: DockerRuntime = request.app.state.runtime
+    try:
+        snapshot = await runtime.status_snapshot(server)
+    except Exception:
+        return JSONResponse({"runtime_state": "error", "minecraft_ready": False})
+    payload = {
+        "runtime_state": snapshot.state,
+        "installation_state": server.installation_state.value if server.installation_state else None,
+        "started_at": snapshot.started_at.isoformat() if snapshot.started_at else None,
+        "minecraft_ready": False,
+        "players_online": None,
+        "players_max": None,
+        "ping_ms": None,
+        "motd": None,
+        "reported_version": None,
+    }
+    if snapshot.state != "running":
+        return JSONResponse(payload)
+    settings = get_settings()
+    try:
+        minecraft = await query_minecraft_status(
+            settings.minecraft_status_host,
+            server.host_port,
+            settings.minecraft_status_timeout_seconds,
+        )
+    except MinecraftStatusError:
+        return JSONResponse(payload)
+    payload.update(
+        {
+            "minecraft_ready": True,
+            "players_online": minecraft.online,
+            "players_max": minecraft.maximum,
+            "ping_ms": minecraft.latency_ms,
+            "motd": minecraft.motd,
+            "reported_version": minecraft.version_name,
+        }
+    )
+    return JSONResponse(payload)
 
 
 @router.get("/servers/new", response_class=HTMLResponse)
@@ -259,11 +300,18 @@ async def server_detail(
     message = request.query_params.get("message")
     users = []
     memberships = []
+    member_rows = []
     if request.state.user.role is UserRole.ADMIN:
         users = list(await session.scalars(select(User).order_by(User.email)))
         memberships = list(
             await session.scalars(select(ServerMember).where(ServerMember.server_id == server.id))
         )
+        users_by_id = {user.id: user for user in users}
+        member_rows = [
+            (users_by_id[member.user_id], member)
+            for member in memberships
+            if member.user_id in users_by_id
+        ]
     return templates.TemplateResponse(
         request,
         "server_detail.html",
@@ -275,6 +323,7 @@ async def server_detail(
             "message": message,
             "users": users,
             "memberships": memberships,
+            "member_rows": member_rows,
             "can_manage": can_manage,
             "properties": properties,
             "settings_error": settings_error,
@@ -369,7 +418,10 @@ async def server_command_ui(
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await record_audit(
-        request, "server.command", server_id=server.id, details=command.split(maxsplit=1)[0]
+        request,
+        "server.command",
+        server_id=server.id,
+        details=normalize_console_command(command).split(maxsplit=1)[0],
     )
     if request.headers.get("X-Talos-Async") == "true":
         return JSONResponse({"ok": True, "message": ui_message(request, "Command sent")})
@@ -402,6 +454,31 @@ async def add_server_member(
         request, "server.member_set", server_id=server.id, details=f"{user_id}:{role.value}"
     )
     return RedirectResponse(f"/servers/{server.id}?message=Member+updated", status_code=303)
+
+
+@router.post("/servers/{server_id}/members/{user_id}/remove")
+async def remove_server_member(
+    request: Request,
+    server_id: uuid.UUID,
+    user_id: uuid.UUID,
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_admin(request)
+    require_csrf(request, csrf_token)
+    server = await require_server_access(session, request.state.user, server_id)
+    member = await session.scalar(
+        select(ServerMember).where(
+            ServerMember.server_id == server_id, ServerMember.user_id == user_id
+        )
+    )
+    if member is not None:
+        await session.delete(member)
+        await session.commit()
+        await record_audit(
+            request, "server.member_remove", server_id=server.id, details=str(user_id)
+        )
+    return RedirectResponse(f"/servers/{server.id}#access", status_code=303)
 
 
 @router.post("/servers/{server_id}/settings")
@@ -538,8 +615,18 @@ async def download_server_file(
         file_path = await asyncio.to_thread(
             resolve_server_path, runtime.data_path(server.id), path, allow_root=False
         )
+        if file_path.is_dir():
+            archive, download_name = await asyncio.to_thread(
+                create_directory_archive, runtime.data_path(server.id), path
+            )
+            return FileResponse(
+                archive,
+                filename=download_name,
+                media_type="application/zip",
+                background=BackgroundTask(archive.unlink, missing_ok=True),
+            )
         if not file_path.is_file():
-            raise FileServiceError("File does not exist")
+            raise FileServiceError("File or directory does not exist")
     except FileServiceError as exc:
         raise _file_error(exc) from exc
     return FileResponse(file_path, filename=file_path.name, media_type="application/octet-stream")
@@ -742,20 +829,23 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
             return
         await websocket.accept()
         runtime: DockerRuntime = websocket.app.state.runtime
+        settings = get_settings()
         previous = None
-        refresh_players_in = 0
         try:
             while True:
                 snapshot = await runtime.snapshot(server)
-                if snapshot.state == "running" and refresh_players_in <= 0:
+                minecraft = None
+                if snapshot.state == "running":
                     try:
-                        await runtime.send_command(server, "list")
-                    except RuntimeError:
-                        pass
-                    refresh_players_in = 15
+                        minecraft = await query_minecraft_status(
+                            settings.minecraft_status_host,
+                            server.host_port,
+                            settings.minecraft_status_timeout_seconds,
+                        )
+                    except MinecraftStatusError:
+                        minecraft = None
                 logs = await runtime.logs(server)
-                ready = "Done (" in logs or 'For help, type "help"' in logs
-                online, maximum, players = player_snapshot(logs)
+                ready = minecraft is not None
                 payload = {
                     "state": snapshot.state,
                     "ready": ready,
@@ -766,14 +856,13 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
                     "cpu_percent": snapshot.cpu_percent,
                     "memory_bytes": snapshot.memory_bytes,
                     "memory_limit_bytes": snapshot.memory_limit_bytes,
-                    "players_online": online,
-                    "players_max": maximum,
-                    "players": players,
+                    "players_online": minecraft.online if minecraft else None,
+                    "players_max": minecraft.maximum if minecraft else None,
+                    "players": minecraft.sample_players if minecraft else [],
                 }
                 if payload != previous:
                     await websocket.send_json(payload)
                     previous = payload
-                refresh_players_in -= 2
                 await asyncio.sleep(2)
         except WebSocketDisconnect:
             pass

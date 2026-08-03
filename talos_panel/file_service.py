@@ -69,7 +69,7 @@ def list_directory(root: Path, value: str = "") -> list[FileEntry]:
         relative = child.relative_to(root).as_posix()
         is_directory = child.is_dir()
         try:
-            size = None if is_directory else child.stat().st_size
+            size = _directory_size(child) if is_directory else child.stat().st_size
         except OSError:
             continue
         entries.append(
@@ -82,6 +82,52 @@ def list_directory(root: Path, value: str = "") -> list[FileEntry]:
             )
         )
     return sorted(entries, key=lambda item: (not item.is_directory, item.name.lower()))
+
+
+def _directory_size(directory: Path) -> int:
+    total = 0
+    for current, directories, files in os.walk(directory, followlinks=False):
+        current_path = Path(current)
+        directories[:] = [name for name in directories if not (current_path / name).is_symlink()]
+        for name in files:
+            path = current_path / name
+            try:
+                if not path.is_symlink():
+                    total += path.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def create_directory_archive(root: Path, value: str) -> tuple[Path, str]:
+    source = resolve_server_path(root, value, allow_root=False)
+    if not source.exists() or not source.is_dir():
+        raise FileServiceError("Directory does not exist")
+    descriptor, temporary_name = tempfile.mkstemp(prefix="talos-download-", suffix=".zip")
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        with zipfile.ZipFile(
+            temporary, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
+        ) as archive:
+            for current, directories, files in os.walk(source, followlinks=False):
+                current_path = Path(current)
+                directories[:] = [
+                    name for name in directories if not (current_path / name).is_symlink()
+                ]
+                relative_directory = current_path.relative_to(source)
+                archive_directory = Path(source.name) / relative_directory
+                if not directories and not files:
+                    archive.writestr(f"{archive_directory.as_posix().rstrip('/')}/", b"")
+                for name in files:
+                    file_path = current_path / name
+                    if file_path.is_symlink():
+                        continue
+                    archive.write(file_path, (archive_directory / name).as_posix())
+        return temporary, f"{source.name}.zip"
+    except (OSError, zipfile.BadZipFile) as exc:
+        temporary.unlink(missing_ok=True)
+        raise FileServiceError("The directory could not be archived") from exc
 
 
 def read_text_file(root: Path, value: str, max_bytes: int) -> str:

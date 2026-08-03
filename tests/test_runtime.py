@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from talos_panel.config import Settings
-from talos_panel.runtime import DockerRuntime, profile_for
+from talos_panel.runtime import DockerRuntime, normalize_console_command, profile_for
 
 
 def test_runtime_paths_are_derived_from_server_id() -> None:
@@ -41,6 +41,14 @@ async def test_console_rejects_control_characters() -> None:
     server = type("Server", (), {})()
     with pytest.raises(ValueError, match="control"):
         await runtime.send_command(server, "say hello\tworld")
+
+
+def test_console_accepts_commands_with_or_without_a_leading_slash() -> None:
+    assert normalize_console_command("help") == "help"
+    assert normalize_console_command(" /help ") == "help"
+    assert normalize_console_command("/ say hello") == "say hello"
+    with pytest.raises(ValueError, match="between 1 and 256"):
+        normalize_console_command("/")
 
 
 @pytest.mark.asyncio

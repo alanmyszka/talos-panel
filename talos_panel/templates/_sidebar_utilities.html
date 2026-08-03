@@ -1,0 +1,8 @@
+<div class="sidebar-utilities">
+  <a class="sidebar-identity" href="/account"><strong>{{ request.state.user.email }}</strong><small>{{ request.state.user.role.value }}</small></a>
+  <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="link-button" type="submit">{{ t("Log out") }}</button></form>
+  <div class="language-switch" aria-label="Language">
+    <form method="post" action="/language/en"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'en' %}active{% endif %}" type="submit">EN</button></form>
+    <form method="post" action="/language/pl"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'pl' %}active{% endif %}" type="submit">PL</button></form>
+  </div>
+</div>

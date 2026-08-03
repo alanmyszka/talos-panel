@@ -12,17 +12,13 @@
 <body>
   {% if request.state.user %}<div class="app-frame">
     <aside class="app-sidebar">
-      <a class="app-brand" href="/"><span class="brand-cube"></span><span><strong>Talos Panel</strong><small>{{ t("Minecraft control") }}</small></span></a>
+      <a class="app-brand" href="/"><strong>Talos Panel</strong></a>
       <nav class="app-nav" aria-label="Main navigation">
         <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span></span>{{ t("Servers") }}</a>
         <a class="{% if request.url.path == '/servers/new' %}active{% endif %}" href="/servers/new"><span></span>{{ t("New server") }}</a>
+        {% if request.state.user.role.value == "admin" %}<a class="{% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span></span>{{ t("Users") }}</a>{% endif %}
       </nav>
-      <div class="app-sidebar-foot">
-        <div class="language-switch" aria-label="Language"><form method="post" action="/language/en"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'en' %}active{% endif %}" type="submit">EN</button></form><form method="post" action="/language/pl"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'pl' %}active{% endif %}" type="submit">PL</button></form></div>
-        {% if request.state.user.role.value == "admin" %}<a class="sidebar-foot-link" href="/admin/users">{{ t("Users") }}</a>{% endif %}
-        <a class="sidebar-foot-account" href="/account"><strong>{{ request.state.user.email }}</strong><small>{{ request.state.user.role.value }}</small></a>
-        <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="link-button" type="submit">{{ t("Log out") }}</button></form>
-      </div>
+      {% include "_sidebar_utilities.html" %}
     </aside>
     <main>{% block content %}{% endblock %}</main>
   </div>{% else %}<main class="public-main"><div class="public-language language-switch"><form method="post" action="/language/en"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'en' %}active{% endif %}" type="submit">EN</button></form><form method="post" action="/language/pl"><input type="hidden" name="next_path" value="{{ request.url.path }}"><button class="{% if lang == 'pl' %}active{% endif %}" type="submit">PL</button></form></div>{% block public_content %}{{ self.content() }}{% endblock %}</main>{% endif %}

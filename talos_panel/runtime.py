@@ -37,6 +37,17 @@ SUPPORTED_JAVA_IMAGES = {
 }
 
 
+def normalize_console_command(command: str) -> str:
+    normalized = command.strip()
+    if normalized.startswith("/"):
+        normalized = normalized[1:].lstrip()
+    if not normalized or len(normalized) > 256:
+        raise ValueError("Command must contain between 1 and 256 characters")
+    if any(ord(character) < 32 for character in normalized):
+        raise ValueError("Command contains unsupported control characters")
+    return normalized
+
+
 def profile_for(server: MinecraftServer) -> RuntimeProfile:
     if server.java_version not in SUPPORTED_JAVA_IMAGES:
         raise ValueError("Server does not have a supported installed Java profile")
@@ -160,6 +171,25 @@ class DockerRuntime:
 
         return await asyncio.to_thread(inspect)
 
+    async def status_snapshot(self, server: MinecraftServer) -> RuntimeSnapshot:
+        def inspect() -> RuntimeSnapshot:
+            try:
+                container = self._managed_container(server.id)
+            except NotFound:
+                return RuntimeSnapshot(container_id=None, state="not_created")
+            container.reload()
+            state = container.status
+            started_at = None
+            started_value = container.attrs.get("State", {}).get("StartedAt")
+            if state == "running" and started_value:
+                try:
+                    started_at = datetime.fromisoformat(started_value).astimezone(UTC)
+                except ValueError:
+                    started_at = None
+            return RuntimeSnapshot(container.id, state, started_at)
+
+        return await asyncio.to_thread(inspect)
+
     async def snapshot(self, server: MinecraftServer) -> RuntimeSnapshot:
         def inspect() -> RuntimeSnapshot:
             try:
@@ -222,11 +252,7 @@ class DockerRuntime:
         return await asyncio.to_thread(read)
 
     async def send_command(self, server: MinecraftServer, command: str) -> None:
-        normalized = command.strip()
-        if not normalized or len(normalized) > 256:
-            raise ValueError("Command must contain between 1 and 256 characters")
-        if any(ord(character) < 32 for character in normalized):
-            raise ValueError("Command contains unsupported control characters")
+        normalized = normalize_console_command(command)
 
         def send() -> None:
             try:

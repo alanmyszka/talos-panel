@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from talos_panel.web import player_snapshot
+from talos_panel.web import minecraft_is_ready, player_snapshot
 
 
 def test_console_script_targets_command_input_not_csrf_input() -> None:
@@ -17,6 +17,13 @@ There are 2 of a max of 20 players online: Steve, Alex
 
 def test_player_snapshot_is_unknown_before_list_response() -> None:
     assert player_snapshot("Done (1.23s)! For help, type \"help\"") == (None, None, [])
+
+
+def test_minecraft_ready_requires_a_running_container() -> None:
+    logs = 'Done (1.23s)! For help, type "help"'
+    assert minecraft_is_ready("running", logs) is True
+    assert minecraft_is_ready("exited", logs) is False
+    assert minecraft_is_ready("running", "Starting Minecraft server") is False
 
 
 def test_delete_form_requires_typed_confirmation() -> None:
@@ -75,6 +82,13 @@ def test_opening_console_scrolls_to_latest_output() -> None:
     assert "output.scrollTop = output.scrollHeight" in template
 
 
+def test_console_only_follows_logs_when_reader_is_near_the_bottom() -> None:
+    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    assert "function consoleIsNearBottom()" in template
+    assert "const followConsole = consoleIsNearBottom()" in template
+    assert "followConsole ? output.scrollHeight : previousConsoleScroll" in template
+
+
 def test_server_detail_uses_framed_sidebar_workspace() -> None:
     template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
     assert 'class="server-shell"' in template
@@ -101,7 +115,7 @@ def test_server_workspace_uses_full_screen_layout() -> None:
     assert "max-width: none" in stylesheet
     assert "min-height: 100vh" in stylesheet
     assert "calc(100vh - 72px)" not in stylesheet
-    assert "grid-template-columns: 224px minmax(0, 1fr)" in stylesheet
+    assert "grid-template-columns: var(--sidebar-width) minmax(0, 1fr)" in stylesheet
 
 
 def test_dashboard_uses_sidebar_and_server_rows() -> None:
@@ -125,10 +139,117 @@ def test_language_switch_and_translated_javascript_are_present() -> None:
 
 def test_sidebar_utilities_are_anchored_in_shared_footer() -> None:
     base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    utilities = Path("talos_panel/templates/_sidebar_utilities.html").read_text(encoding="utf-8")
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
-    footer = base.split('class="app-sidebar-foot"', 1)[1]
-    assert 'class="language-switch"' in footer
-    assert 'class="sidebar-foot-link"' in footer
+    assert '{% include "_sidebar_utilities.html" %}' in base
+    assert '{% include "_sidebar_utilities.html" %}' in detail
+    assert 'class="language-switch"' in utilities
+    assert 'class="sidebar-identity"' in utilities
+    assert "request.state.user.role.value" in utilities
     assert "margin-top: auto" in stylesheet
     assert ".server-tabs button:hover" in stylesheet
     assert "font-weight: 500" in stylesheet
+
+
+def test_sidebar_navigation_and_server_identity_are_consistent() -> None:
+    base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    utilities = Path("talos_panel/templates/_sidebar_utilities.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert base.index('href="/admin/users"') < base.index('{% include "_sidebar_utilities.html" %}')
+    assert utilities.index('class="sidebar-identity"') < utilities.index('class="language-switch"')
+    assert 'class="app-brand" href="/"' in detail
+    assert 'class="server-heading-identity"' in detail
+    assert 'id="sidebar-runtime"' not in detail
+    assert "sidebarRuntime" not in detail
+    assert "brand-cube" not in base
+    assert "brand-cube" not in detail
+    assert "Minecraft control" not in detail
+    assert 'class="server-home-link" href="/"' in detail
+    assert "All servers" not in detail
+    assert "border-bottom: 1px solid var(--line)" in stylesheet
+    assert ".server-home-link:hover" in stylesheet
+    assert 'class="server-navigation"' in detail
+    assert ".app-nav a,\n.server-home-link,\n.server-tabs button" in stylesheet
+    assert "padding: 9px 10px" in stylesheet
+
+
+def test_server_list_spacing_and_motion_use_design_tokens() -> None:
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert "--sidebar-width: 224px" in stylesheet
+    assert stylesheet.count(
+        "padding: var(--sidebar-padding-top) var(--sidebar-padding-x) "
+        "var(--sidebar-padding-bottom)"
+    ) == 2
+    assert "--space-6: 24px" in stylesheet
+    assert "min-height: 80px" in stylesheet
+    assert "font-size: 10.5px" in stylesheet
+    assert "@keyframes workspace-enter" in stylesheet
+    assert "prefers-reduced-motion: reduce" in stylesheet
+
+
+def test_access_views_explain_account_state_and_show_server_roles() -> None:
+    users = Path("talos_panel/templates/users.html").read_text(encoding="utf-8")
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    assert "Active means that the account is allowed to log in." in users
+    assert "access_by_user.get(user.id)" in users
+    assert "Full access to every server (global administrator)." in users
+    assert "member_rows" in detail
+    assert "Remove access" in detail
+    assert 'class="access-grid"' in detail
+
+
+def test_file_manager_downloads_directories_and_server_list_scrolls() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    index = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert "const download = document.createElement('a');" in detail
+    assert 'class="server-list-body"' in index
+    assert ".server-list-body" in stylesheet
+    assert "overflow-y: auto" in stylesheet
+    assert "justify-content: center" in stylesheet
+
+
+def test_dashboard_is_wider_and_shows_players_and_live_uptime() -> None:
+    index = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert 'class="dashboard-page"' in index
+    assert 'class="server-player-count"' in index
+    assert 'class="server-uptime"' in index
+    assert "data-started-at" in index
+    assert "updateUptimes" in index
+    assert "main:has(.dashboard-page)" in stylesheet
+    assert "max-width: 1500px" in stylesheet
+
+
+def test_dashboard_loads_runtime_summaries_after_initial_render() -> None:
+    index = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
+    web = Path("talos_panel/web.py").read_text(encoding="utf-8")
+    assert 'data-summary-url="/servers/{{ server.id }}/summary"' in index
+    assert "refreshSummaries()" in index
+    assert "window.setInterval(refreshSummaries, 10000)" in index
+    assert 'runtime_state": "loading"' in web
+    assert 'send_command(server, "list")' not in web
+    assert "query_minecraft_status(" in web
+
+
+def test_dashboard_and_login_use_viewport_bounded_layouts() -> None:
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert "body:has(.public-main)" in stylesheet
+    assert "height: 100dvh" in stylesheet
+    assert ".public-main .auth-card" in stylesheet
+    assert ".app-frame:has(.dashboard-page)" in stylesheet
+    assert ".dashboard-page .server-list-body" in stylesheet
+
+
+def test_ui_polish_uses_balanced_dashboard_branding_and_static_cards() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert "Commands are sent directly to Minecraft stdin" not in detail
+    assert "Symbolic links and protected Talos files" not in detail
+    assert "font-size: 11px" in stylesheet
+    assert "letter-spacing: .04em" in stylesheet
+    assert stylesheet.count("padding-top: var(--space-8)") >= 1
+    assert stylesheet.count("padding-bottom: var(--space-8)") >= 1
+    assert ".server-workspace .card:hover" in stylesheet
