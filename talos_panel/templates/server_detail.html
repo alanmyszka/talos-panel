@@ -76,25 +76,25 @@
 
 <div id="tab-files" class="tab-panel hidden" data-tab-panel="files" role="tabpanel">
 <section class="card files-card">
-  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2></div></div>
+  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2><p>{{ t("Drag and drop files or folders onto the file list to upload them.") }}</p></div></div>
   {% if can_manage %}
   <div class="file-actions">
     <form id="file-upload-form" class="browser-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="uploads" multiple required><span class="file-picker-button">{{ t("Browse") }}</span><span class="file-picker-name">{{ t("No file selected") }}</span></label><button type="submit">{{ t("Upload files") }}</button></form>
     <form id="folder-upload-form" class="browser-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="uploads" webkitdirectory multiple required><span class="file-picker-button">{{ t("Browse folder") }}</span><span class="file-picker-name">{{ t("No folder selected") }}</span></label><button type="submit">{{ t("Upload folder") }}</button></form>
     <form id="mkdir-form" action="/servers/{{ server.id }}/files/mkdir"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><input name="name" maxlength="255" placeholder="{{ t('New directory') }}" required><button type="submit" class="secondary">{{ t("Create directory") }}</button></form>
   </div>
+  <div id="upload-progress" class="upload-progress hidden" aria-live="polite"><div><span>{{ t("Uploading…") }}</span><strong>0%</strong></div><progress max="100" value="0"></progress></div>
   {% endif %}
   <div id="files-error" class="error hidden"></div>
   <div class="file-toolbar">
     <button id="files-up" class="secondary" type="button">← {{ t("Up") }}</button>
     <code id="files-path">/</code>
   </div>
-  <div class="file-table-wrap"><table class="file-table"><thead><tr><th>{{ t("Name") }}</th><th>{{ t("Size") }}</th><th>{{ t("Actions") }}</th></tr></thead><tbody id="files-body"><tr><td colspan="3">{{ t("Loading…") }}</td></tr></tbody></table></div>
-  {% if can_manage %}
-  <form id="text-editor" class="text-editor hidden" action="/servers/{{ server.id }}/files/text"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input id="editor-path" type="hidden" name="path"><div class="overview-title"><h3 id="editor-title">{{ t("Edit file") }}</h3><button id="editor-close" class="secondary" type="button">{{ t("Close") }}</button></div><textarea name="content" spellcheck="false"></textarea><div class="editor-footer"><button type="submit">{{ t("Save file") }}</button><span class="editor-state hint" aria-live="polite"></span></div></form>
-  {% endif %}
+  <div class="file-table-wrap"><div id="file-drop-overlay" class="file-drop-overlay hidden"><strong>{{ t("Drop files or folders here") }}</strong><span>{{ t("They will be uploaded to the current directory") }}</span></div><table class="file-table"><thead><tr><th>{{ t("Name") }}</th><th>{{ t("Size") }}</th><th>{{ t("Actions") }}</th></tr></thead><tbody id="files-body"><tr><td colspan="3">{{ t("Loading…") }}</td></tr></tbody></table></div>
 </section>
+{% if can_manage %}<dialog id="text-editor-dialog" class="text-editor-dialog"><form id="text-editor" class="text-editor" action="/servers/{{ server.id }}/files/text"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input id="editor-path" type="hidden" name="path"><div class="overview-title"><div><h3 id="editor-title">{{ t("Edit file") }}</h3><code class="editor-file-path"></code></div><button id="editor-close" class="secondary" type="button">{{ t("Close") }}</button></div><textarea name="content" spellcheck="false"></textarea><div class="editor-footer"><button type="submit">{{ t("Save file") }}</button><span class="editor-state hint" aria-live="polite"></span></div></form></dialog>{% endif %}
 {% if can_manage %}<dialog id="file-delete-dialog" class="confirm-dialog"><form method="dialog"><div><h2>{{ t("Delete item") }}</h2><p class="file-delete-message"></p><p class="hint">{{ t("The item will be moved to the Talos trash.") }}</p></div><div class="dialog-actions"><button value="cancel" class="secondary" type="submit">{{ t("Cancel") }}</button><button id="file-delete-confirm" value="confirm" class="danger" type="submit">{{ t("Delete") }}</button></div></form></dialog>{% endif %}
+{% if can_manage %}<dialog id="file-organize-dialog" class="confirm-dialog file-organize-dialog"><form method="dialog"><div><h2></h2><p class="file-organize-source hint"></p><label class="file-destination-label">{{ t("Destination directory") }}<input name="destination_parent" autocomplete="off" placeholder="/"></label><label>{{ t("Name") }}<input name="name" maxlength="255" required autocomplete="off"></label></div><div class="dialog-actions"><button value="cancel" class="secondary" type="submit">{{ t("Cancel") }}</button><button value="confirm" type="submit">{{ t("Apply") }}</button></div></form></dialog>{% endif %}
 </div>
 
 {% if can_manage %}
@@ -186,7 +186,7 @@ const ui = {
   installationBackground: {{ t("Installation continues in the background. You can leave this page safely.")|tojson }},
   reconnectingInstallation: {{ t("Reconnecting to installation status…")|tojson }},
   emptyDirectory: {{ t("This directory is empty.")|tojson }},
-  download: {{ t("Download file")|tojson }}, edit: {{ t("Edit")|tojson }}, enable: {{ t("Enable")|tojson }}, disable: {{ t("Disable")|tojson }}, delete: {{ t("Delete")|tojson }},
+  download: {{ t("Download file")|tojson }}, edit: {{ t("Edit")|tojson }}, enable: {{ t("Enable")|tojson }}, disable: {{ t("Disable")|tojson }}, delete: {{ t("Delete")|tojson }}, rename: {{ t("Rename")|tojson }}, move: {{ t("Move")|tojson }}, copy: {{ t("Copy")|tojson }}, extract: {{ t("Extract")|tojson }},
   saved: {{ t("Saved")|tojson }}, saving: {{ t("Saving…")|tojson }}, savedRestart: {{ t("Saved — restart required")|tojson }},
   sending: {{ t("Sending…")|tojson }}, working: {{ t("Working…")|tojson }},
   consoleReady: {{ t("Console ready")|tojson }}, notReady: {{ t("Not ready")|tojson }}, unavailable: {{ t("Unavailable")|tojson }},
@@ -630,14 +630,22 @@ async function loadFiles(path = '') {
       download.textContent = ui.download;
       download.href = `/servers/{{ server.id }}/files/download?path=${encodeURIComponent(entry.path)}`;
       actionCell.appendChild(download);
-      if (!entry.is_directory && !entry.managed) {
+      if (canManageFiles) {
+        actionCell.appendChild(fileAction(ui.rename, () => openOrganizeDialog('rename', entry)));
+        actionCell.appendChild(fileAction(ui.move, () => openOrganizeDialog('move', entry)));
+        actionCell.appendChild(fileAction(ui.copy, () => openOrganizeDialog('copy', entry)));
+        if (!entry.is_directory && entry.name.toLowerCase().endsWith('.zip')) {
+          actionCell.appendChild(fileAction(ui.extract, () => extractArchive(entry.path)));
+        }
+      }
+      if (!entry.is_directory) {
         if (canManageFiles && entry.editable) actionCell.appendChild(fileAction(ui.edit, () => editFile(entry.path)));
         if (canManageFiles && entry.path.startsWith('plugins/') && (entry.name.endsWith('.jar') || entry.name.endsWith('.jar.disabled'))) {
           const enabling = entry.name.endsWith('.disabled');
           actionCell.appendChild(fileAction(enabling ? ui.enable : ui.disable, () => togglePlugin(entry.path, enabling)));
         }
       }
-      if (canManageFiles && !entry.managed) actionCell.appendChild(fileAction(ui.delete, () => deleteFile(entry.path), 'danger mini-danger'));
+      if (canManageFiles) actionCell.appendChild(fileAction(ui.delete, () => deleteFile(entry.path), 'danger mini-danger'));
       row.append(nameCell, sizeCell, actionCell);
       filesBody.appendChild(row);
     });
@@ -658,17 +666,7 @@ async function submitFileForm(form) {
   const isEditor = form.id === 'text-editor';
   button.disabled = true;
   try {
-    let body = new FormData(form);
-    if (form.classList.contains('browser-upload-form')) {
-      const input = form.querySelector('input[type="file"]');
-      body = new FormData();
-      body.set('csrf_token', csrfToken);
-      body.set('parent', currentFilePath);
-      Array.from(input.files).forEach(file => {
-        body.append('uploads', file, file.name);
-        body.append('relative_paths', file.webkitRelativePath || file.name);
-      });
-    }
+    const body = new FormData(form);
     const response = await fetch(form.action, {method: 'POST', body});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'File operation failed');
@@ -693,8 +691,111 @@ async function submitFileForm(form) {
 
 ['#file-upload-form', '#folder-upload-form', '#mkdir-form'].forEach(selector => {
   const form = document.querySelector(selector);
-  if (form) form.addEventListener('submit', event => { event.preventDefault(); submitFileForm(form); });
+  if (form) form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (form.classList.contains('browser-upload-form')) {
+      const input = form.querySelector('input[type="file"]');
+      const files = Array.from(input.files).map(file => ({file, path: file.webkitRelativePath || file.name}));
+      uploadFiles(files, form);
+    } else {
+      submitFileForm(form);
+    }
+  });
 });
+
+function uploadFiles(files, form = null) {
+  if (!files.length) return;
+  const progress = document.querySelector('#upload-progress');
+  const progressBar = progress.querySelector('progress');
+  const progressText = progress.querySelector('strong');
+  const button = form?.querySelector('button[type="submit"]');
+  if (button) button.disabled = true;
+  progress.classList.remove('hidden');
+  progressBar.value = 0;
+  progressText.textContent = '0%';
+  const body = new FormData();
+  body.set('csrf_token', csrfToken);
+  body.set('parent', currentFilePath);
+  files.forEach(item => {
+    body.append('uploads', item.file, item.file.name);
+    body.append('relative_paths', item.path);
+  });
+  const request = new XMLHttpRequest();
+  request.open('POST', `/servers/{{ server.id }}/files/upload`);
+  request.upload.addEventListener('progress', event => {
+    if (!event.lengthComputable) return;
+    const percent = Math.round(event.loaded / event.total * 100);
+    progressBar.value = percent;
+    progressText.textContent = `${percent}%`;
+  });
+  request.addEventListener('load', async () => {
+    try {
+      const data = JSON.parse(request.responseText);
+      if (request.status < 200 || request.status >= 300) throw new Error(data.detail || 'Upload failed');
+      progressBar.value = 100;
+      progressText.textContent = '100%';
+      showNotice(data.message);
+      if (form) {
+        form.reset();
+        const name = form.querySelector('.file-picker-name');
+        name.textContent = form.querySelector('input[webkitdirectory]') ? {{ t("No folder selected")|tojson }} : {{ t("No file selected")|tojson }};
+      }
+      await loadFiles(currentFilePath);
+    } catch (error) {
+      showNotice(error.message, true);
+    } finally {
+      if (button) button.disabled = false;
+      window.setTimeout(() => progress.classList.add('hidden'), 900);
+    }
+  });
+  request.addEventListener('error', () => {
+    if (button) button.disabled = false;
+    progress.classList.add('hidden');
+    showNotice({{ t("Upload failed")|tojson }}, true);
+  });
+  request.send(body);
+}
+
+async function filesFromEntry(entry, prefix = '') {
+  if (entry.isFile) {
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+    return [{file, path: `${prefix}${file.name}`}];
+  }
+  if (!entry.isDirectory) return [];
+  const reader = entry.createReader();
+  const children = [];
+  while (true) {
+    const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    if (!batch.length) break;
+    children.push(...batch);
+  }
+  const nested = await Promise.all(children.map(child => filesFromEntry(child, `${prefix}${entry.name}/`)));
+  return nested.flat();
+}
+
+const fileDropTarget = document.querySelector('.file-table-wrap');
+const fileDropOverlay = document.querySelector('#file-drop-overlay');
+if (canManageFiles && fileDropTarget) {
+  let dragDepth = 0;
+  fileDropTarget.addEventListener('dragenter', event => { event.preventDefault(); dragDepth += 1; fileDropOverlay.classList.remove('hidden'); });
+  fileDropTarget.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
+  fileDropTarget.addEventListener('dragleave', () => { dragDepth -= 1; if (dragDepth <= 0) fileDropOverlay.classList.add('hidden'); });
+  fileDropTarget.addEventListener('drop', async event => {
+    event.preventDefault();
+    dragDepth = 0;
+    fileDropOverlay.classList.add('hidden');
+    try {
+      const items = Array.from(event.dataTransfer.items || []);
+      const entries = items.map(item => item.webkitGetAsEntry?.()).filter(Boolean);
+      const files = entries.length
+        ? (await Promise.all(entries.map(entry => filesFromEntry(entry)))).flat()
+        : Array.from(event.dataTransfer.files).map(file => ({file, path: file.name}));
+      uploadFiles(files);
+    } catch (error) {
+      showNotice(error.message, true);
+    }
+  });
+}
 
 async function editFile(path) {
   try {
@@ -702,19 +803,25 @@ async function editFile(path) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'File could not be opened');
     const editor = document.querySelector('#text-editor');
+    const dialog = document.querySelector('#text-editor-dialog');
     editor.querySelector('#editor-path').value = path;
     editor.querySelector('#editor-title').textContent = `Edit ${path}`;
+    editor.querySelector('.editor-file-path').textContent = path;
     editor.querySelector('textarea').value = data.content;
     editor.querySelector('.editor-state').textContent = '';
-    editor.classList.remove('hidden');
-    editor.scrollIntoView({behavior: 'smooth'});
+    dialog.showModal();
+    editor.querySelector('textarea').focus();
   } catch (error) { showNotice(error.message, true); }
 }
 
 const textEditor = document.querySelector('#text-editor');
 if (textEditor) {
   textEditor.addEventListener('submit', event => { event.preventDefault(); submitFileForm(textEditor); });
-  document.querySelector('#editor-close').addEventListener('click', () => textEditor.classList.add('hidden'));
+  const textEditorDialog = document.querySelector('#text-editor-dialog');
+  document.querySelector('#editor-close').addEventListener('click', () => textEditorDialog.close());
+  textEditorDialog.addEventListener('click', event => {
+    if (event.target === textEditorDialog) textEditorDialog.close();
+  });
 }
 
 async function fileMutation(url, values) {
@@ -726,6 +833,59 @@ async function fileMutation(url, values) {
   if (!response.ok) throw new Error(data.detail || 'File operation failed');
   showNotice(data.message);
   await loadFiles(currentFilePath);
+}
+
+const fileOrganizeDialog = document.querySelector('#file-organize-dialog');
+function copiedFileName(name) {
+  const index = name.lastIndexOf('.');
+  return index > 0 ? `${name.slice(0, index)} copy${name.slice(index)}` : `${name} copy`;
+}
+
+function openOrganizeDialog(mode, entry) {
+  fileOrganizeDialog.dataset.mode = mode;
+  fileOrganizeDialog.dataset.source = entry.path;
+  fileOrganizeDialog.querySelector('h2').textContent = mode === 'rename' ? ui.rename : (mode === 'move' ? ui.move : ui.copy);
+  fileOrganizeDialog.querySelector('.file-organize-source').textContent = entry.path;
+  const destinationLabel = fileOrganizeDialog.querySelector('.file-destination-label');
+  const destination = fileOrganizeDialog.querySelector('[name="destination_parent"]');
+  destinationLabel.classList.toggle('hidden', mode === 'rename');
+  destination.value = currentFilePath;
+  fileOrganizeDialog.querySelector('[name="name"]').value = mode === 'copy' ? copiedFileName(entry.name) : entry.name;
+  fileOrganizeDialog.returnValue = '';
+  fileOrganizeDialog.showModal();
+  fileOrganizeDialog.querySelector('[name="name"]').focus();
+}
+
+if (fileOrganizeDialog) fileOrganizeDialog.addEventListener('close', async () => {
+  if (fileOrganizeDialog.returnValue !== 'confirm') return;
+  const mode = fileOrganizeDialog.dataset.mode;
+  const source = fileOrganizeDialog.dataset.source;
+  const sourceParts = source.split('/');
+  sourceParts.pop();
+  const destination = mode === 'rename'
+    ? sourceParts.join('/')
+    : fileOrganizeDialog.querySelector('[name="destination_parent"]').value.replace(/^\/+|\/+$/g, '');
+  const name = fileOrganizeDialog.querySelector('[name="name"]').value;
+  try {
+    await fileMutation(`/servers/{{ server.id }}/files/organize`, {
+      action: mode === 'rename' ? 'move' : mode,
+      source,
+      destination_parent: destination,
+      name
+    });
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+
+async function extractArchive(path) {
+  const result = await confirmAction(`${ui.extract}: ${path}?`);
+  if (!result.confirmed) return;
+  try {
+    await fileMutation(`/servers/{{ server.id }}/files/extract`, {path, destination_parent: currentFilePath});
+  } catch (error) {
+    showNotice(error.message, true);
+  }
 }
 
 async function deleteFile(path) {

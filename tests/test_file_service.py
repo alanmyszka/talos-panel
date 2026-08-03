@@ -8,8 +8,11 @@ from fastapi import UploadFile
 from talos_panel.file_service import (
     FileServiceError,
     archive_path,
+    copy_path,
     create_directory_archive,
+    extract_zip,
     list_directory,
+    move_path,
     mutation_requires_stopped_server,
     read_text_file,
     resolve_server_path,
@@ -44,7 +47,7 @@ def test_paths_reject_traversal_absolute_paths_and_symlinks(tmp_path: Path) -> N
         resolve_server_path(linked_root, "world")
 
 
-def test_listing_shows_managed_files_but_hides_internal_files_and_symlinks(tmp_path: Path) -> None:
+def test_listing_shows_server_files_but_hides_internal_files_and_symlinks(tmp_path: Path) -> None:
     (tmp_path / "world").mkdir()
     (tmp_path / "server.jar").write_bytes(b"jar")
     (tmp_path / "eula.txt").write_text("eula=true", encoding="utf-8")
@@ -59,11 +62,23 @@ def test_listing_shows_managed_files_but_hides_internal_files_and_symlinks(tmp_p
         "server.jar",
         "server.properties",
     ]
-    assert [entry.name for entry in entries if entry.managed] == ["eula.txt", "server.jar"]
     assert entries[-1].editable is True
-    with pytest.raises(FileServiceError, match="managed"):
-        resolve_server_path(tmp_path, "server.jar")
-    assert resolve_server_path(tmp_path, "server.jar", allow_protected=True).is_file()
+    assert resolve_server_path(tmp_path, "server.jar").is_file()
+    assert resolve_server_path(tmp_path, "eula.txt").is_file()
+
+
+def test_server_jar_and_eula_support_regular_file_operations(tmp_path: Path) -> None:
+    (tmp_path / "server.jar").write_bytes(b"jar")
+    (tmp_path / "eula.txt").write_text("eula=true", encoding="utf-8")
+    (tmp_path / "storage").mkdir()
+
+    moved = move_path(tmp_path, "server.jar", "storage", "minecraft.jar")
+    copied = copy_path(tmp_path, "eula.txt", "storage", "eula-copy.txt")
+    archived = archive_path(tmp_path, "eula.txt")
+
+    assert moved.read_bytes() == b"jar"
+    assert copied.read_text(encoding="utf-8") == "eula=true"
+    assert archived.read_text(encoding="utf-8") == "eula=true"
 
 
 def test_listing_calculates_directory_size_without_following_symlinks(tmp_path: Path) -> None:
@@ -145,6 +160,71 @@ def test_delete_moves_item_to_server_trash(tmp_path: Path) -> None:
     assert archived.read_bytes() == b"world"
     assert archived.is_relative_to(tmp_path / ".trash" / "files")
     assert not target.exists()
+
+
+def test_move_rename_and_copy_preserve_contents(tmp_path: Path) -> None:
+    source = tmp_path / "plugins" / "Example"
+    source.mkdir(parents=True)
+    (source / "config.yml").write_text("enabled: true", encoding="utf-8")
+    (tmp_path / "archive").mkdir()
+
+    renamed = move_path(tmp_path, "plugins/Example", "plugins", "Renamed")
+    copied = copy_path(tmp_path, "plugins/Renamed", "archive", "Renamed copy")
+
+    assert renamed == tmp_path / "plugins" / "Renamed"
+    assert copied.joinpath("config.yml").read_text(encoding="utf-8") == "enabled: true"
+    assert renamed.joinpath("config.yml").is_file()
+
+
+def test_copy_rejects_destination_inside_source_and_nested_symlinks(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    with pytest.raises(FileServiceError, match="itself"):
+        copy_path(tmp_path, "source", "source", "copy")
+    (source / "link").symlink_to(tmp_path)
+    with pytest.raises(FileServiceError, match="symbolic links"):
+        copy_path(tmp_path, "source", "", "copy")
+
+
+def test_extract_zip_is_bounded_and_blocks_traversal_and_symlinks(tmp_path: Path) -> None:
+    valid = tmp_path / "valid.zip"
+    with zipfile.ZipFile(valid, "w") as archive:
+        archive.writestr("Example/config.yml", "enabled: true")
+        archive.writestr("Example/empty/", b"")
+    assert extract_zip(tmp_path, "valid.zip", "plugins", 1024) == 1
+    assert (tmp_path / "plugins" / "Example" / "config.yml").is_file()
+
+    unsafe = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(unsafe, "w") as archive:
+        archive.writestr("../outside.txt", "unsafe")
+    with pytest.raises(FileServiceError, match="Invalid file path"):
+        extract_zip(tmp_path, "unsafe.zip", "", 1024)
+    assert not (tmp_path.parent / "outside.txt").exists()
+
+    symlink = tmp_path / "symlink.zip"
+    with zipfile.ZipFile(symlink, "w") as archive:
+        entry = zipfile.ZipInfo("link")
+        entry.create_system = 3
+        entry.external_attr = 0o120777 << 16
+        archive.writestr(entry, "/etc")
+    with pytest.raises(FileServiceError, match="symbolic links"):
+        extract_zip(tmp_path, "symlink.zip", "", 1024)
+
+
+def test_extract_zip_refuses_overwrite_and_size_limit(tmp_path: Path) -> None:
+    (tmp_path / "existing.txt").write_text("keep", encoding="utf-8")
+    archive_path = tmp_path / "files.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("existing.txt", "replace")
+    with pytest.raises(FileServiceError, match="overwrite"):
+        extract_zip(tmp_path, "files.zip", "", 1024)
+    assert (tmp_path / "existing.txt").read_text(encoding="utf-8") == "keep"
+
+    large = tmp_path / "large.zip"
+    with zipfile.ZipFile(large, "w") as archive:
+        archive.writestr("large.bin", b"x" * 20)
+    with pytest.raises(FileServiceError, match="size limit"):
+        extract_zip(tmp_path, "large.zip", "", 10)
 
 
 def test_live_mutations_only_protect_active_server_data(tmp_path: Path) -> None:

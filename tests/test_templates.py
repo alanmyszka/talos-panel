@@ -289,13 +289,29 @@ def test_ui_polish_uses_balanced_dashboard_branding_and_static_cards() -> None:
 
 def test_file_manager_uses_general_file_and_folder_uploads() -> None:
     detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     file_service = Path("talos_panel/file_service.py").read_text(encoding="utf-8")
+    web = Path("talos_panel/web.py").read_text(encoding="utf-8")
     assert 'id="folder-upload-form"' in detail
     assert "webkitdirectory multiple" in detail
     assert "file.webkitRelativePath || file.name" in detail
     assert 'id="plugin-upload-form"' not in detail
     assert "/plugins/upload" not in detail
     assert "Use the Paper plugin upload" not in file_service
+    assert 'id="upload-progress"' in detail
+    assert 'id="file-drop-overlay"' in detail
+    assert "Drag and drop files or folders onto the file list" in detail
+    assert 'id="text-editor-dialog"' in detail
+    assert "dialog.showModal()" in detail
+    assert ".text-editor-dialog" in stylesheet
+    assert "request.upload.addEventListener('progress'" in detail
+    assert "filesFromEntry" in detail
+    assert "openOrganizeDialog('rename'" in detail
+    assert "openOrganizeDialog('move'" in detail
+    assert "openOrganizeDialog('copy'" in detail
+    assert "/files/organize" in web
+    assert "/files/extract" in web
+    assert "extract_zip" in file_service
 
 
 def test_server_heading_avoids_duplicate_metadata_and_version_includes_software() -> None:
@@ -373,6 +389,11 @@ def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
     assert "restore_backup" in web
     assert "server.auto_restart" in operations
     assert "save-all flush" in operations
+    assert ".server-workspace:has(#tab-updates:not(.hidden))" in stylesheet
+    assert "#tab-updates:not(.hidden)" in stylesheet
+    update_styles = stylesheet.split(".update-history {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto" in update_styles
+    assert "flex: 1" in update_styles
 
 
 def test_small_ui_consistency_details() -> None:

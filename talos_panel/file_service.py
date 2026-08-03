@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ from fastapi import UploadFile
 
 TEXT_SUFFIXES = {".conf", ".json", ".log", ".md", ".properties", ".toml", ".txt", ".yaml", ".yml"}
 HIDDEN_ROOT_NAMES = {".trash"}
-PROTECTED_ROOT_NAMES = {".trash", "eula.txt", "server.jar"}
+PROTECTED_ROOT_NAMES = {".trash"}
 LIVE_PROTECTED_SUFFIXES = {".dat", ".db", ".ldb", ".log", ".mca", ".sqlite", ".sqlite3"}
 LIVE_PROTECTED_NAMES = {"level.dat", "level.dat_old", "session.lock"}
 
@@ -25,7 +26,6 @@ class FileEntry:
     is_directory: bool
     size: int | None
     editable: bool
-    managed: bool
 
 
 def mutation_requires_stopped_server(root: Path, value: str, operation: str) -> bool:
@@ -77,12 +77,11 @@ def resolve_server_path(
     value: str,
     *,
     allow_root: bool = True,
-    allow_protected: bool = False,
 ) -> Path:
     if root.is_symlink():
         raise FileServiceError("The server directory cannot be a symbolic link")
     relative = _relative_path(value)
-    if not allow_protected and relative.parts and relative.parts[0] in PROTECTED_ROOT_NAMES:
+    if relative.parts and relative.parts[0] in PROTECTED_ROOT_NAMES:
         raise FileServiceError("This path is managed by Talos Panel")
     candidate = root.joinpath(*relative.parts)
     resolved_root = root.resolve()
@@ -120,7 +119,6 @@ def list_directory(root: Path, value: str = "") -> list[FileEntry]:
                 is_directory=is_directory,
                 size=size,
                 editable=not is_directory and child.suffix.lower() in TEXT_SUFFIXES,
-                managed=directory == root and child.name in PROTECTED_ROOT_NAMES,
             )
         )
     return sorted(entries, key=lambda item: (not item.is_directory, item.name.lower()))
@@ -203,6 +201,123 @@ def create_directory(root: Path, parent: str, name: str) -> Path:
     except FileExistsError as exc:
         raise FileServiceError("A file or directory with this name already exists") from exc
     return directory
+
+
+def move_path(root: Path, source_value: str, destination_parent: str, name: str) -> Path:
+    _validate_name(name)
+    source = resolve_server_path(root, source_value, allow_root=False)
+    parent = resolve_server_path(root, destination_parent)
+    destination = resolve_server_path(
+        root, (parent / name).relative_to(root).as_posix(), allow_root=False
+    )
+    if not source.exists():
+        raise FileServiceError("File or directory does not exist")
+    if source.is_dir() and _contains_symlink(source):
+        raise FileServiceError("Directories containing symbolic links are not supported")
+    if destination.exists():
+        raise FileServiceError("A file or directory with this name already exists")
+    if source.is_dir() and destination.is_relative_to(source):
+        raise FileServiceError("A directory cannot be moved into itself")
+    try:
+        os.replace(source, destination)
+    except OSError as exc:
+        raise FileServiceError("The item could not be moved") from exc
+    return destination
+
+
+def copy_path(root: Path, source_value: str, destination_parent: str, name: str) -> Path:
+    _validate_name(name)
+    source = resolve_server_path(root, source_value, allow_root=False)
+    parent = resolve_server_path(root, destination_parent)
+    destination = resolve_server_path(
+        root, (parent / name).relative_to(root).as_posix(), allow_root=False
+    )
+    if not source.exists():
+        raise FileServiceError("File or directory does not exist")
+    if source.is_dir() and _contains_symlink(source):
+        raise FileServiceError("Directories containing symbolic links are not supported")
+    if destination.exists():
+        raise FileServiceError("A file or directory with this name already exists")
+    if source.is_dir() and destination.is_relative_to(source):
+        raise FileServiceError("A directory cannot be copied into itself")
+    try:
+        if source.is_dir():
+            shutil.copytree(source, destination, symlinks=False)
+        else:
+            shutil.copy2(source, destination, follow_symlinks=False)
+    except OSError as exc:
+        if destination.is_dir():
+            shutil.rmtree(destination, ignore_errors=True)
+        else:
+            destination.unlink(missing_ok=True)
+        raise FileServiceError("The item could not be copied") from exc
+    return destination
+
+
+def extract_zip(root: Path, archive_value: str, destination_parent: str, max_bytes: int) -> int:
+    archive_path = resolve_server_path(root, archive_value, allow_root=False)
+    destination = resolve_server_path(root, destination_parent)
+    if not archive_path.is_file() or archive_path.suffix.lower() != ".zip":
+        raise FileServiceError("Select a ZIP archive")
+    created_files: list[Path] = []
+    created_directories: list[Path] = []
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            entries = archive.infolist()
+            if len(entries) > 10_000:
+                raise FileServiceError("ZIP archive contains too many entries")
+            if sum(entry.file_size for entry in entries) > max_bytes:
+                raise FileServiceError("Extracted files exceed the configured size limit")
+            planned: list[tuple[zipfile.ZipInfo, Path]] = []
+            planned_targets: set[Path] = set()
+            for entry in entries:
+                relative = _relative_path(entry.filename.rstrip("/"))
+                if relative == PurePosixPath("."):
+                    continue
+                for part in relative.parts:
+                    _validate_name(part)
+                mode = entry.external_attr >> 16
+                if mode & 0o170000 == 0o120000:
+                    raise FileServiceError("ZIP symbolic links are not supported")
+                target = destination.joinpath(*relative.parts)
+                resolve_server_path(root, target.relative_to(root).as_posix(), allow_root=False)
+                if target.exists():
+                    raise FileServiceError("ZIP archive would overwrite an existing item")
+                if target in planned_targets:
+                    raise FileServiceError("ZIP archive contains duplicate paths")
+                planned_targets.add(target)
+                planned.append((entry, target))
+            for entry, target in planned:
+                if entry.is_dir():
+                    existed = target.exists()
+                    target.mkdir(parents=True, exist_ok=True)
+                    if not existed:
+                        created_directories.append(target)
+                    continue
+                missing_parents = [
+                    path for path in reversed(target.parents) if path != root and not path.exists()
+                ]
+                for parent in missing_parents:
+                    parent.mkdir()
+                    created_directories.append(parent)
+                with archive.open(entry) as source, target.open("xb") as output:
+                    shutil.copyfileobj(source, output, length=1024 * 1024)
+                created_files.append(target)
+        return len(created_files)
+    except FileServiceError:
+        raise
+    except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+        raise FileServiceError("The ZIP archive could not be extracted") from exc
+    finally:
+        # Only roll back incomplete extraction. A successful return leaves every item in place.
+        if 'planned' not in locals() or len(created_files) < sum(not item.is_dir() for item, _ in planned):
+            for path in reversed(created_files):
+                path.unlink(missing_ok=True)
+            for path in reversed(created_directories):
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
 
 
 async def store_upload(
@@ -290,6 +405,14 @@ def _validate_name(name: str) -> None:
         or any(ord(character) < 32 for character in name)
     ):
         raise FileServiceError("Invalid filename")
+
+
+def _contains_symlink(directory: Path) -> bool:
+    for current, directories, files in os.walk(directory, followlinks=False):
+        current_path = Path(current)
+        if any((current_path / name).is_symlink() for name in directories + files):
+            return True
+    return False
 
 
 def _atomic_write(destination: Path, content: bytes, *, overwrite: bool) -> None:

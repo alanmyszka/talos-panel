@@ -38,9 +38,12 @@ from talos_panel.db import SessionFactory, get_session
 from talos_panel.file_service import (
     FileServiceError,
     archive_path,
+    copy_path,
     create_directory,
     create_directory_archive,
+    extract_zip,
     list_directory,
+    move_path,
     mutation_requires_stopped_server,
     read_text_file,
     resolve_server_path,
@@ -1225,7 +1228,6 @@ async def download_server_file(
             runtime.data_path(server.id),
             path,
             allow_root=False,
-            allow_protected=True,
         )
         if file_path.is_dir():
             archive, download_name = await asyncio.to_thread(
@@ -1330,6 +1332,76 @@ async def create_server_directory(
     relative = destination.relative_to(runtime.data_path(server.id)).as_posix()
     await record_audit(request, "server.directory_create", server_id=server.id, details=relative)
     return JSONResponse({"ok": True, "message": ui_message(request, "Directory created")})
+
+
+@router.post("/servers/{server_id}/files/organize")
+async def organize_server_file(
+    request: Request,
+    server_id: uuid.UUID,
+    action: str = Form(),
+    source: str = Form(),
+    destination_parent: str = Form(""),
+    name: str = Form(min_length=1, max_length=255),
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    if action not in {"move", "copy"}:
+        raise HTTPException(status_code=422, detail="Unsupported file operation")
+    runtime: DockerRuntime = request.app.state.runtime
+    destination = str(PurePosixPath(destination_parent) / name)
+    await _require_safe_file_mutation(runtime, server, destination, action)
+    if action == "move":
+        await _require_safe_file_mutation(runtime, server, source, action)
+    operation = move_path if action == "move" else copy_path
+    try:
+        result = await asyncio.to_thread(
+            operation, runtime.data_path(server.id), source, destination_parent, name
+        )
+    except FileServiceError as exc:
+        raise _file_error(exc) from exc
+    relative = result.relative_to(runtime.data_path(server.id)).as_posix()
+    await record_audit(
+        request,
+        f"server.file_{action}",
+        server_id=server.id,
+        details=f"{source} -> {relative}",
+    )
+    message = "Item moved" if action == "move" else "Item copied"
+    return JSONResponse({"ok": True, "message": ui_message(request, message)})
+
+
+@router.post("/servers/{server_id}/files/extract")
+async def extract_server_archive(
+    request: Request,
+    server_id: uuid.UUID,
+    path: str = Form(),
+    destination_parent: str = Form(""),
+    csrf_token: str = Form(),
+    session: AsyncSession = Depends(get_session),
+):
+    require_csrf(request, csrf_token)
+    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    runtime: DockerRuntime = request.app.state.runtime
+    await _require_stopped(runtime, server, "Stop the server before extracting an archive")
+    try:
+        extracted = await asyncio.to_thread(
+            extract_zip,
+            runtime.data_path(server.id),
+            path,
+            destination_parent,
+            get_settings().max_file_upload_bytes,
+        )
+    except FileServiceError as exc:
+        raise _file_error(exc) from exc
+    await record_audit(
+        request,
+        "server.file_extract",
+        server_id=server.id,
+        details=f"{path} -> {destination_parent or '/'} ({extracted} files)",
+    )
+    return JSONResponse({"ok": True, "message": ui_message(request, "Archive extracted")})
 
 
 @router.post("/servers/{server_id}/files/text")
