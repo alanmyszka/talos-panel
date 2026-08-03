@@ -130,6 +130,21 @@ def require_admin(request: Request) -> User:
     return user
 
 
+def content_security_policy(path: str) -> str:
+    policy = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; "
+        "img-src 'self' data:"
+    )
+    if path.startswith("/docs") or path == "/redoc":
+        policy = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "connect-src 'self'; img-src 'self' data: https://fastapi.tiangolo.com"
+        )
+    return policy
+
+
 async def record_audit(
     request: Request,
     action: str,
@@ -186,7 +201,7 @@ class AuthenticationMiddleware:
                         (b"x-content-type-options", b"nosniff"),
                         (b"referrer-policy", b"same-origin"),
                         (b"x-frame-options", b"DENY"),
-                        (b"content-security-policy", b"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:"),
+                        (b"content-security-policy", content_security_policy(path).encode()),
                     ]
                 )
                 if self.settings.secure_cookies:
