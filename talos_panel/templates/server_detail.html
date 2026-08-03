@@ -40,7 +40,7 @@
   <div class="card overview">
     <div class="overview-title"><h2>{{ t("Server details") }}</h2><span id="runtime-badge" class="status state-{{ runtime_state }}">{{ t(runtime_state|replace("_", " ")) }}</span></div>
     <dl class="details">
-      <div><dt>{{ t("Address") }}</dt><dd><code id="server-address">localhost:{{ server.host_port }}</code><button class="copy" type="button" data-copy="localhost:{{ server.host_port }}">{{ t("Copy") }}</button></dd></div>
+      <div><dt>{{ t("Address") }}</dt><dd><code id="server-address">localhost:{{ server.host_port }}</code><button class="copy mini-button" type="button" data-copy="localhost:{{ server.host_port }}">{{ t("Copy") }}</button></dd></div>
       <div><dt>{{ t("Port") }}</dt><dd id="server-port">{{ server.host_port }}</dd></div>
       <div><dt>{{ t("Memory") }}</dt><dd id="server-memory">{{ server.memory_mb }} MB</dd></div>
       <div><dt>{{ t("Installed version") }}</dt><dd id="installed-version">{% if server.installed_version %}{{ server.server_type.value|title }} {{ server.installed_version }}{% else %}—{% endif %}</dd></div>
@@ -76,15 +76,13 @@
 
 <div id="tab-files" class="tab-panel hidden" data-tab-panel="files" role="tabpanel">
 <section class="card files-card">
-  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2></div><span class="status">{% if can_manage %}{{ t("Read / write") }}{% else %}{{ t("Read only") }}{% endif %}</span></div>
+  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2></div></div>
   {% if can_manage %}
   <div class="file-actions">
-    <form id="file-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="upload" required><span class="file-picker-button">{{ t("Browse") }}</span><span class="file-picker-name">{{ t("No file selected") }}</span></label><button type="submit">{{ t("Upload file") }}</button></form>
+    <form id="file-upload-form" class="browser-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="uploads" multiple required><span class="file-picker-button">{{ t("Browse") }}</span><span class="file-picker-name">{{ t("No file selected") }}</span></label><button type="submit">{{ t("Upload files") }}</button></form>
+    <form id="folder-upload-form" class="browser-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="uploads" webkitdirectory multiple required><span class="file-picker-button">{{ t("Browse folder") }}</span><span class="file-picker-name">{{ t("No folder selected") }}</span></label><button type="submit">{{ t("Upload folder") }}</button></form>
     <form id="mkdir-form" action="/servers/{{ server.id }}/files/mkdir"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><input name="name" maxlength="255" placeholder="{{ t('New directory') }}" required><button type="submit" class="secondary">{{ t("Create directory") }}</button></form>
   </div>
-  {% if server.server_type.value == "paper" %}
-  <form id="plugin-upload-form" class="plugin-upload" action="/servers/{{ server.id }}/plugins/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label>{{ t("Paper plugin JAR") }}<input type="file" name="upload" accept=".jar,application/java-archive" required></label><button type="submit">{{ t("Upload plugin") }}</button><span class="hint">{{ t("The JAR must contain plugin.yml or paper-plugin.yml.") }}</span></form>
-  {% endif %}
   {% endif %}
   <div id="files-error" class="error hidden"></div>
   <div class="file-toolbar">
@@ -102,7 +100,7 @@
 {% if can_manage %}
 <div id="tab-backups" class="tab-panel hidden" data-tab-panel="backups" role="tabpanel">
 <section class="card backups-card">
-  <div class="overview-title"><div><h2>{{ t("Backups") }}</h2><p>{{ t("Create, download and restore full server snapshots.") }}</p></div><form method="post" action="/servers/{{ server.id }}/backups"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Create backup") }}</button></form></div>
+  <div class="overview-title"><div><h2>{{ t("Backups") }}</h2><p>{{ t("Create, download and restore full server snapshots.") }}</p></div><form class="backup-create-form" method="post" action="/servers/{{ server.id }}/backups"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Create backup") }}</button></form></div>
   <p class="hint backup-stop-hint{% if runtime_state != 'running' %} hidden{% endif %}">{{ t("Stop the server before creating or restoring a backup.") }}</p>
   <form class="backup-policy" method="post" action="/servers/{{ server.id }}/backup-policy"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label class="check"><input type="checkbox" name="backup_enabled" value="true"{% if server.backup_enabled %} checked{% endif %}> {{ t("Automatic backups") }}</label><label>{{ t("Every") }}<input type="number" name="backup_interval_hours" min="1" max="720" value="{{ server.backup_interval_hours }}"> {{ t("hours") }}</label><label>{{ t("Keep") }}<input type="number" name="backup_retention" min="1" max="100" value="{{ server.backup_retention }}"> {{ t("copies") }}</label><button class="secondary" type="submit">{{ t("Save policy") }}</button></form>
   {% if disk %}<p class="hint">{{ t("Free disk space") }}: {{ (disk.free / 1073741824)|round(1) }} / {{ (disk.total / 1073741824)|round(1) }} GB{% if server.next_backup_at %} · {{ t("Next backup") }}: {{ server.next_backup_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}</p>{% endif %}
@@ -114,13 +112,12 @@
 <section class="card updates-card"><div class="overview-title"><div><h2>{{ t("Server updates") }}</h2><p>{{ t("Talos creates a recovery point before replacing the server JAR.") }}</p></div><span class="status">{{ server.installed_version or "—" }}</span></div><form id="server-update-form" class="update-form" method="post" action="/servers/{{ server.id }}/update"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label>{{ t("Target version") }}<select name="target_version" required><option value="">{{ t("Loading versions…") }}</option></select></label><button class="backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Backup and update") }}</button></form><div class="update-history">{% for update in updates %}<article><div><strong>{{ update.from_version }} → {{ update.to_version }}</strong><span>{{ update.created_at.strftime("%Y-%m-%d %H:%M") }} · {{ t(update.state) }}</span>{% if update.error_message %}<small class="error">{{ update.error_message }}</small>{% endif %}</div>{% if update.backup_id and update.state in ["completed", "failed"] %}<form class="update-rollback" method="post" action="/servers/{{ server.id }}/updates/{{ update.id }}/rollback"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="secondary backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Rollback") }}</button></form>{% endif %}</article>{% else %}<p class="hint">{{ t("No updates have been performed yet.") }}</p>{% endfor %}</div></section>
 </div>
 
-<div id="tab-monitoring" class="tab-panel hidden" data-tab-panel="monitoring" role="tabpanel"><section class="card monitoring-card"><div class="overview-title"><div><h2>{{ t("Monitoring") }}</h2><p>{{ t("CPU, memory and player history from the last 24 hours.") }}</p></div><span class="status{% if server.restart_failures >= 3 %} state-error{% endif %}">{{ server.restart_failures }} {{ t("recent failures") }}</span></div><div class="chart-legend"><span class="cpu">CPU</span><span class="memory">{{ t("Memory") }}</span><span class="players">{{ t("Players") }}</span></div><canvas id="metrics-chart" width="1200" height="320"></canvas><form class="restart-policy" method="post" action="/servers/{{ server.id }}/restart-policy"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label class="check"><input type="checkbox" name="auto_restart" value="true"{% if server.auto_restart %} checked{% endif %}> {{ t("Automatically restart after a crash") }}</label><button class="secondary" type="submit">{{ t("Save policy") }}</button></form><h3>{{ t("Runtime history") }}</h3><div class="runtime-history">{% for event in runtime_events %}<article><code>{{ event.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</code><strong>{{ event.action }}</strong><span>{{ event.details or "" }}</span></article>{% else %}<p class="hint">{{ t("No runtime events yet.") }}</p>{% endfor %}</div></section></div>
+<div id="tab-monitoring" class="tab-panel hidden" data-tab-panel="monitoring" role="tabpanel"><section class="card monitoring-card"><div class="overview-title"><div><h2>{{ t("Monitoring") }}</h2><p>{{ t("CPU, memory and player history from the last 24 hours.") }}</p></div><span class="status{% if server.restart_failures >= 3 %} state-error{% endif %}">{{ server.restart_failures }} {{ t("recent failures") }}</span></div><div class="monitoring-values"><div><span>{{ t("Latest CPU") }}</span><strong id="monitoring-cpu">—</strong></div><div><span>{{ t("Peak memory") }}</span><strong id="monitoring-memory">—</strong></div><div><span>{{ t("Peak players") }}</span><strong id="monitoring-players">—</strong></div><div><span>{{ t("Samples") }}</span><strong id="monitoring-samples">{{ metric_data|length }}</strong></div></div><div class="chart-legend"><span class="cpu">CPU</span><span class="memory">{{ t("Memory") }}</span><span class="players">{{ t("Players") }}</span></div><canvas id="metrics-chart" width="1200" height="320"></canvas><form class="restart-policy" method="post" action="/servers/{{ server.id }}/restart-policy"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label class="check"><input type="checkbox" name="auto_restart" value="true"{% if server.auto_restart %} checked{% endif %}> {{ t("Automatically restart after a crash") }}</label><button class="secondary" type="submit">{{ t("Save policy") }}</button></form><div class="runtime-history-head"><h3>{{ t("Runtime history") }}</h3><span class="hint">{{ t("Latest 30 events") }}</span></div><div class="runtime-history">{% for event in runtime_events %}<article><code>{{ event.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</code><strong>{{ event.action }}</strong><span>{{ event.details or "" }}</span></article>{% else %}<p class="hint">{{ t("No runtime events yet.") }}</p>{% endfor %}</div></section></div>
 
 <div id="tab-settings" class="tab-panel hidden" data-tab-panel="settings" role="tabpanel">
 <section class="card settings-card">
   <div class="overview-title">
     <div><h2>{{ t("Server settings") }}</h2><p>{{ t("Compatible changes are applied immediately; remaining changes take effect after restart.") }}</p></div>
-    <span class="status">{{ t("Owner") }}</span>
   </div>
   {% if settings_error %}<p class="error">{{ settings_error }}</p>{% endif %}
   <form class="settings-form" method="post" action="/servers/{{ server.id }}/settings">
@@ -200,6 +197,7 @@ const ui = {
   op: "OP", whitelist: {{ t("Whitelist")|tojson }}, banned: {{ t("Banned")|tojson }}, kick: {{ t("Kick")|tojson }}, ban: {{ t("Ban")|tojson }}, pardon: {{ t("Pardon")|tojson }},
   addWhitelist: {{ t("Add to whitelist")|tojson }}, removeWhitelist: {{ t("Remove from whitelist")|tojson }}, grantOp: {{ t("Grant OP")|tojson }}, revokeOp: {{ t("Revoke OP")|tojson }},
   partialOnlineList: {{ t("Minecraft did not expose every online player; the online markers may be incomplete.")|tojson }}, serverMustRun: {{ t("Start the server to perform player actions.")|tojson }}
+  ,preparing: {{ t("Preparing operation…")|tojson }}, archiving: {{ t("Creating backup archive…")|tojson }}, recoveryPoint: {{ t("Creating recovery point…")|tojson }}, downloadingUpdate: {{ t("Downloading and verifying server JAR…")|tojson }}, finalizing: {{ t("Finalizing changes…")|tojson }}
 };
 const output = document.querySelector('#console-output');
 const runtimeBadge = document.querySelector('#runtime-badge');
@@ -429,6 +427,42 @@ if (updateSelect) fetch('/servers/{{ server.id }}/update-options').then(response
     const option = document.createElement('option'); option.value = version; option.textContent = version + (version === data.latest ? ` (${ {{ t("latest")|tojson }} })` : ''); updateSelect.appendChild(option);
   });
 });
+async function submitLongOperation(form, title, stages, hash) {
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const operation = window.talosOperation(title, stages[0]);
+  let stageIndex = 0;
+  const timer = window.setInterval(() => {
+    if (stageIndex < stages.length - 1) operation.stage(stages[++stageIndex]);
+  }, 1400);
+  try {
+    const response = await fetch(form.action, {
+      method: 'POST',
+      headers: {'X-Talos-Async': 'true', 'Accept': 'application/json'},
+      body: new FormData(form)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Operation failed');
+    operation.success(data.message);
+    window.setTimeout(() => {
+      location.hash = hash;
+      location.reload();
+    }, 900);
+  } catch (error) {
+    operation.error(error.message);
+    button.disabled = false;
+  } finally {
+    window.clearInterval(timer);
+  }
+}
+document.querySelector('.backup-create-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  submitLongOperation(event.currentTarget, {{ t("Creating backup")|tojson }}, [ui.preparing, ui.archiving, ui.finalizing], 'backups');
+});
+document.querySelector('#server-update-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  submitLongOperation(event.currentTarget, {{ t("Updating server")|tojson }}, [ui.preparing, ui.recoveryPoint, ui.downloadingUpdate, ui.finalizing], 'updates');
+});
 document.querySelectorAll('.update-rollback').forEach(form => requireFormConfirmation(form, {{ t("Restore the pre-update backup?")|tojson }}));
 const metricsChart = document.querySelector('#metrics-chart');
 if (metricsChart && metricData.length) {
@@ -437,6 +471,12 @@ if (metricsChart && metricData.length) {
   const series = [{key:'cpu', color:'#a48fe0'}, {key:'memory', color:'#d0a45d'}, {key:'players', color:'#77b08a'}];
   series.forEach(item => { const values = metricData.map(point => point[item.key] ?? 0); const maximum = Math.max(...values, 1); context.strokeStyle = item.color; context.lineWidth = 3; context.beginPath(); values.forEach((value, index) => { const x = index / Math.max(1, values.length - 1) * width; const y = height - 8 - value / maximum * (height - 20); index ? context.lineTo(x, y) : context.moveTo(x, y); }); context.stroke(); });
 }
+const cpuSamples = metricData.map(point => point.cpu).filter(value => value !== null);
+const memorySamples = metricData.map(point => point.memory).filter(value => value !== null);
+const playerSamples = metricData.map(point => point.players).filter(value => value !== null);
+document.querySelector('#monitoring-cpu').textContent = cpuSamples.length ? `${cpuSamples.at(-1).toFixed(1)}%` : '—';
+document.querySelector('#monitoring-memory').textContent = memorySamples.length ? formatBytes(Math.max(...memorySamples)) : '—';
+document.querySelector('#monitoring-players').textContent = playerSamples.length ? String(Math.max(...playerSamples)) : '—';
 playersRefresh.addEventListener('click', loadPlayerProfiles);
 playerTableBody.addEventListener('click', async event => {
   const identity = event.target.closest('.player-identity');
@@ -590,14 +630,14 @@ async function loadFiles(path = '') {
       download.textContent = ui.download;
       download.href = `/servers/{{ server.id }}/files/download?path=${encodeURIComponent(entry.path)}`;
       actionCell.appendChild(download);
-      if (!entry.is_directory) {
+      if (!entry.is_directory && !entry.managed) {
         if (canManageFiles && entry.editable) actionCell.appendChild(fileAction(ui.edit, () => editFile(entry.path)));
         if (canManageFiles && entry.path.startsWith('plugins/') && (entry.name.endsWith('.jar') || entry.name.endsWith('.jar.disabled'))) {
           const enabling = entry.name.endsWith('.disabled');
           actionCell.appendChild(fileAction(enabling ? ui.enable : ui.disable, () => togglePlugin(entry.path, enabling)));
         }
       }
-      if (canManageFiles) actionCell.appendChild(fileAction(ui.delete, () => deleteFile(entry.path), 'danger mini-danger'));
+      if (canManageFiles && !entry.managed) actionCell.appendChild(fileAction(ui.delete, () => deleteFile(entry.path), 'danger mini-danger'));
       row.append(nameCell, sizeCell, actionCell);
       filesBody.appendChild(row);
     });
@@ -618,7 +658,18 @@ async function submitFileForm(form) {
   const isEditor = form.id === 'text-editor';
   button.disabled = true;
   try {
-    const response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
+    let body = new FormData(form);
+    if (form.classList.contains('browser-upload-form')) {
+      const input = form.querySelector('input[type="file"]');
+      body = new FormData();
+      body.set('csrf_token', csrfToken);
+      body.set('parent', currentFilePath);
+      Array.from(input.files).forEach(file => {
+        body.append('uploads', file, file.name);
+        body.append('relative_paths', file.webkitRelativePath || file.name);
+      });
+    }
+    const response = await fetch(form.action, {method: 'POST', body});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'File operation failed');
     showNotice(data.message);
@@ -627,7 +678,9 @@ async function submitFileForm(form) {
     } else {
       form.reset();
       const fileName = form.querySelector('.file-picker-name');
-      if (fileName) fileName.textContent = {{ t("No file selected")|tojson }};
+      if (fileName) fileName.textContent = form.querySelector('input[webkitdirectory]')
+        ? {{ t("No folder selected")|tojson }}
+        : {{ t("No file selected")|tojson }};
     }
     document.querySelectorAll('.file-parent').forEach(input => { input.value = currentFilePath; });
     await loadFiles(currentFilePath);
@@ -638,7 +691,7 @@ async function submitFileForm(form) {
   }
 }
 
-['#file-upload-form', '#mkdir-form', '#plugin-upload-form'].forEach(selector => {
+['#file-upload-form', '#folder-upload-form', '#mkdir-form'].forEach(selector => {
   const form = document.querySelector(selector);
   if (form) form.addEventListener('submit', event => { event.preventDefault(); submitFileForm(form); });
 });
@@ -820,15 +873,24 @@ const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
 document.querySelectorAll('.files-card input[type="file"]').forEach(input => {
   const updateFileName = () => {
     const name = input.closest('.file-picker')?.querySelector('.file-picker-name');
-    if (name) name.textContent = input.files?.[0]?.name || {{ t("No file selected")|tojson }};
+    if (!name) return;
+    const files = Array.from(input.files || []);
+    if (!files.length) {
+      name.textContent = input.hasAttribute('webkitdirectory') ? {{ t("No folder selected")|tojson }} : {{ t("No file selected")|tojson }};
+    } else if (input.hasAttribute('webkitdirectory')) {
+      name.textContent = files[0].webkitRelativePath.split('/')[0];
+    } else {
+      name.textContent = files.length === 1 ? files[0].name : `${files.length} {{ t("files selected") }}`;
+    }
   };
   input.addEventListener('change', updateFileName);
   input.addEventListener('cancel', updateFileName);
 });
 
 const socket = new WebSocket(`${protocol}://${location.host}/servers/{{ server.id }}/console`);
-socket.onmessage = event => {
-  const data = JSON.parse(event.data);
+let pendingSocketData = null;
+let socketRenderTimer = null;
+function renderSocketState(data) {
   latestConsoleData = data;
   if (!document.querySelector('[data-tab-panel="console"]').classList.contains('hidden')) {
     renderConsoleOutput(data);
@@ -868,6 +930,16 @@ socket.onmessage = event => {
     empty.textContent = playerCountKnown ? ui.noPlayers : ui.playerDataUnavailable;
     playersList.appendChild(empty);
   }
+}
+socket.onmessage = event => {
+  pendingSocketData = JSON.parse(event.data);
+  if (socketRenderTimer !== null) return;
+  socketRenderTimer = window.setTimeout(() => {
+    const data = pendingSocketData;
+    pendingSocketData = null;
+    socketRenderTimer = null;
+    if (data) renderSocketState(data);
+  }, 50);
 };
 socket.onclose = () => {
   readyBadge.textContent = ui.consoleDisconnected;

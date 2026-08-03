@@ -287,6 +287,17 @@ def test_ui_polish_uses_balanced_dashboard_branding_and_static_cards() -> None:
     assert ".server-workspace .card:hover" in stylesheet
 
 
+def test_file_manager_uses_general_file_and_folder_uploads() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    file_service = Path("talos_panel/file_service.py").read_text(encoding="utf-8")
+    assert 'id="folder-upload-form"' in detail
+    assert "webkitdirectory multiple" in detail
+    assert "file.webkitRelativePath || file.name" in detail
+    assert 'id="plugin-upload-form"' not in detail
+    assert "/plugins/upload" not in detail
+    assert "Use the Paper plugin upload" not in file_service
+
+
 def test_server_heading_avoids_duplicate_metadata_and_version_includes_software() -> None:
     detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
     assert "{{ server.game_version }} · localhost:{{ server.host_port }}" not in detail
@@ -315,6 +326,11 @@ def test_backups_have_a_dedicated_safe_management_tab() -> None:
     assert "backup-delete-form" in detail
     assert "backup-requires-stopped" in detail
     assert ".backup-list" in stylesheet
+    assert ".server-workspace:has(#tab-backups:not(.hidden))" in stylesheet
+    assert "#tab-backups:not(.hidden)" in stylesheet
+    backup_styles = stylesheet.split(".backup-list {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto" in backup_styles
+    assert "overscroll-behavior: contain" in backup_styles
 
 
 def test_players_have_profiles_and_async_administration_actions() -> None:
@@ -335,6 +351,8 @@ def test_players_have_profiles_and_async_administration_actions() -> None:
 
 def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
     detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     web = Path("talos_panel/web.py").read_text(encoding="utf-8")
     operations = Path("talos_panel/operations_service.py").read_text(encoding="utf-8")
     assert 'data-tab="updates"' in detail
@@ -342,10 +360,29 @@ def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
     assert 'class="backup-policy"' in detail
     assert "Backup and update" in detail
     assert "metrics-chart" in detail
+    assert 'id="monitoring-cpu"' in detail
+    assert 'id="monitoring-memory"' in detail
+    assert 'class="runtime-history"' in detail
+    assert 'class="backup-create-form"' in detail
+    assert "submitLongOperation" in detail
+    assert "socketRenderTimer" in detail
+    assert "window.talosOperation" in base
+    assert ".operation-spinner" in stylesheet
+    assert "overflow-y: auto" in stylesheet
     assert "create_backup" in web
     assert "restore_backup" in web
     assert "server.auto_restart" in operations
     assert "save-all flush" in operations
+
+
+def test_small_ui_consistency_details() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    create = Path("talos_panel/templates/new_server.html").read_text(encoding="utf-8")
+    assert 'class="copy mini-button"' in detail
+    assert "Read / write" not in detail
+    assert '<span class="status">{{ t("Owner") }}</span>' not in detail
+    assert 'class="check eula-check"' in create
+    assert "</a>.</span>" not in create
 
 
 def test_account_has_two_factor_sessions_and_security_review() -> None:

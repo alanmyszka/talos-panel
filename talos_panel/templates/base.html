@@ -52,6 +52,36 @@
       setTimeout(() => toast.remove(), 220);
     }, error ? 7000 : 4200);
   };
+  window.talosOperation = function(title, initialStage) {
+    const region = document.querySelector('#toast-region');
+    const toast = document.createElement('div');
+    toast.className = 'toast operation-toast';
+    const spinner = document.createElement('span');
+    spinner.className = 'operation-spinner';
+    const content = document.createElement('span');
+    const heading = document.createElement('strong');
+    const stage = document.createElement('small');
+    heading.textContent = title;
+    stage.textContent = initialStage;
+    content.append(heading, stage);
+    toast.append(spinner, content);
+    region.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast-visible'));
+    const finish = (message, error) => {
+      spinner.className = `operation-result ${error ? 'error' : 'success'}`;
+      spinner.textContent = error ? '!' : '✓';
+      stage.textContent = message;
+      setTimeout(() => {
+        toast.classList.remove('toast-visible');
+        setTimeout(() => toast.remove(), 220);
+      }, error ? 6500 : 1800);
+    };
+    return {
+      stage(message) { stage.textContent = message; },
+      success(message) { finish(message, false); },
+      error(message) { finish(message, true); }
+    };
+  };
   </script>
 </body>
 </html>

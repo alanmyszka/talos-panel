@@ -5,6 +5,8 @@ import pytest
 from talos_panel.server_settings import (
     ServerProperties,
     ServerSettingsError,
+    changed_setting_fields,
+    live_setting_commands,
     read_server_properties,
     write_server_properties,
 )
@@ -48,3 +50,42 @@ def test_properties_reject_symlink(tmp_path: Path) -> None:
 
 def test_properties_defaults_when_server_has_not_created_file(tmp_path: Path) -> None:
     assert read_server_properties(tmp_path) == ServerProperties()
+
+
+def test_legacy_numeric_properties_are_normalized(tmp_path: Path) -> None:
+    (tmp_path / "server.properties").write_text(
+        "gamemode=0\ndifficulty=1\nview-distance=invalid\nsimulation-distance=64\nmotd=\n",
+        encoding="utf-8",
+    )
+
+    settings = read_server_properties(tmp_path)
+
+    assert settings.gamemode == "survival"
+    assert settings.difficulty == "easy"
+    assert settings.view_distance == 10
+    assert settings.simulation_distance == 10
+    assert settings.motd == "A Minecraft Server"
+
+
+def test_live_commands_only_cover_runtime_safe_settings() -> None:
+    before = ServerProperties()
+    after = before.model_copy(
+        update={
+            "difficulty": "hard",
+            "gamemode": "creative",
+            "whitelist": True,
+            "pvp": False,
+        }
+    )
+
+    assert changed_setting_fields(before, after) == {
+        "difficulty",
+        "gamemode",
+        "whitelist",
+        "pvp",
+    }
+    assert live_setting_commands(before, after) == [
+        ("difficulty", "difficulty hard"),
+        ("gamemode", "defaultgamemode creative"),
+        ("whitelist", "whitelist on"),
+    ]

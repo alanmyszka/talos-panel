@@ -44,7 +44,7 @@ def test_paths_reject_traversal_absolute_paths_and_symlinks(tmp_path: Path) -> N
         resolve_server_path(linked_root, "world")
 
 
-def test_listing_hides_protected_files_and_symlinks(tmp_path: Path) -> None:
+def test_listing_shows_managed_files_but_hides_internal_files_and_symlinks(tmp_path: Path) -> None:
     (tmp_path / "world").mkdir()
     (tmp_path / "server.jar").write_bytes(b"jar")
     (tmp_path / "eula.txt").write_text("eula=true", encoding="utf-8")
@@ -53,8 +53,17 @@ def test_listing_hides_protected_files_and_symlinks(tmp_path: Path) -> None:
 
     entries = list_directory(tmp_path)
 
-    assert [entry.name for entry in entries] == ["world", "server.properties"]
-    assert entries[1].editable is True
+    assert [entry.name for entry in entries] == [
+        "world",
+        "eula.txt",
+        "server.jar",
+        "server.properties",
+    ]
+    assert [entry.name for entry in entries if entry.managed] == ["eula.txt", "server.jar"]
+    assert entries[-1].editable is True
+    with pytest.raises(FileServiceError, match="managed"):
+        resolve_server_path(tmp_path, "server.jar")
+    assert resolve_server_path(tmp_path, "server.jar", allow_protected=True).is_file()
 
 
 def test_listing_calculates_directory_size_without_following_symlinks(tmp_path: Path) -> None:
@@ -102,18 +111,28 @@ def test_text_edits_are_bounded_and_atomic(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_plugin_upload_requires_descriptor_and_is_atomic(tmp_path: Path) -> None:
+async def test_upload_accepts_jars_and_preserves_a_relative_directory(tmp_path: Path) -> None:
     (tmp_path / "plugins").mkdir()
-    content = plugin_jar()
+    content = b"plugin-data"
     valid = UploadFile(file=io.BytesIO(content), filename="Example.jar")
-    destination = await store_upload(tmp_path, "plugins", valid, 1024 * 1024, plugin=True)
+    destination = await store_upload(
+        tmp_path,
+        "plugins",
+        valid,
+        1024 * 1024,
+        relative_name="Example/config/Example.jar",
+    )
     assert destination.read_bytes() == content
+    assert destination == tmp_path / "plugins" / "Example" / "config" / "Example.jar"
 
-    invalid = UploadFile(file=io.BytesIO(plugin_jar(descriptor=False)), filename="Bad.jar")
-    with pytest.raises(FileServiceError, match="descriptor"):
-        await store_upload(tmp_path, "plugins", invalid, 1024 * 1024, plugin=True)
-    assert not (tmp_path / "plugins" / "Bad.jar").exists()
-    assert not list((tmp_path / "plugins").glob("*.tmp"))
+
+@pytest.mark.asyncio
+async def test_upload_rejects_relative_path_traversal(tmp_path: Path) -> None:
+    upload = UploadFile(file=io.BytesIO(b"unsafe"), filename="unsafe.txt")
+    with pytest.raises(FileServiceError, match="Invalid file path"):
+        await store_upload(
+            tmp_path, "", upload, 1024, relative_name="folder/../../unsafe.txt"
+        )
 
 
 def test_delete_moves_item_to_server_trash(tmp_path: Path) -> None:

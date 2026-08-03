@@ -27,7 +27,7 @@
   </section>
   </div>
   <section class="creation-section jvm-section"><div><h2>{{ t("JVM startup") }}</h2><p>{{ t("Modern Java usually performs well without additional flags. Changes apply when the container is created.") }}</p></div><label class="check"><input type="checkbox" name="use_aikar_flags" value="true">{{ t("Use Aikar JVM flags") }}</label><label>{{ t("Additional JVM flags") }}<textarea name="custom_jvm_flags" maxlength="2048" rows="3" spellcheck="false" placeholder="-Dpaper.playerconnection.keepalive=60"></textarea><span class="hint">{{ t("Heap, classpath, JAR and Java agent arguments are managed by Talos and cannot be overridden.") }}</span></label></section>
-  <label class="check"><input type="checkbox" name="eula_accepted" value="true" required>I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer">Minecraft EULA</a>.</label>
+  <label class="check eula-check"><input type="checkbox" name="eula_accepted" value="true" required><span>{{ t("I accept the") }} <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer">Minecraft EULA</a></span></label>
   <div class="creation-submit"><button type="submit">{{ t("Create and install") }}</button></div>
 </form>
 </div>

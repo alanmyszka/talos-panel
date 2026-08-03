@@ -1,5 +1,4 @@
 import os
-import re
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -9,10 +8,8 @@ from pathlib import Path, PurePosixPath
 from fastapi import UploadFile
 
 TEXT_SUFFIXES = {".conf", ".json", ".log", ".md", ".properties", ".toml", ".txt", ".yaml", ".yml"}
-HIDDEN_ROOT_NAMES = {".trash", "eula.txt", "server.jar"}
+HIDDEN_ROOT_NAMES = {".trash"}
 PROTECTED_ROOT_NAMES = {".trash", "eula.txt", "server.jar"}
-PLUGIN_DESCRIPTOR_NAMES = {"plugin.yml", "paper-plugin.yml"}
-SAFE_PLUGIN_NAME = re.compile(r"^[A-Za-z0-9._ -]+\.jar$")
 LIVE_PROTECTED_SUFFIXES = {".dat", ".db", ".ldb", ".log", ".mca", ".sqlite", ".sqlite3"}
 LIVE_PROTECTED_NAMES = {"level.dat", "level.dat_old", "session.lock"}
 
@@ -28,6 +25,7 @@ class FileEntry:
     is_directory: bool
     size: int | None
     editable: bool
+    managed: bool
 
 
 def mutation_requires_stopped_server(root: Path, value: str, operation: str) -> bool:
@@ -74,11 +72,17 @@ def _relative_path(value: str) -> PurePosixPath:
     return relative
 
 
-def resolve_server_path(root: Path, value: str, *, allow_root: bool = True) -> Path:
+def resolve_server_path(
+    root: Path,
+    value: str,
+    *,
+    allow_root: bool = True,
+    allow_protected: bool = False,
+) -> Path:
     if root.is_symlink():
         raise FileServiceError("The server directory cannot be a symbolic link")
     relative = _relative_path(value)
-    if relative.parts and relative.parts[0] in PROTECTED_ROOT_NAMES:
+    if not allow_protected and relative.parts and relative.parts[0] in PROTECTED_ROOT_NAMES:
         raise FileServiceError("This path is managed by Talos Panel")
     candidate = root.joinpath(*relative.parts)
     resolved_root = root.resolve()
@@ -116,6 +120,7 @@ def list_directory(root: Path, value: str = "") -> list[FileEntry]:
                 is_directory=is_directory,
                 size=size,
                 editable=not is_directory and child.suffix.lower() in TEXT_SUFFIXES,
+                managed=directory == root and child.name in PROTECTED_ROOT_NAMES,
             )
         )
     return sorted(entries, key=lambda item: (not item.is_directory, item.name.lower()))
@@ -206,18 +211,21 @@ async def store_upload(
     upload: UploadFile,
     max_bytes: int,
     *,
-    plugin: bool = False,
+    relative_name: str | None = None,
 ) -> Path:
-    name = upload.filename or ""
-    _validate_name(name)
-    if plugin and not SAFE_PLUGIN_NAME.fullmatch(name):
-        raise FileServiceError("Plugin filename must end in .jar")
-    destination = resolve_server_path(root, parent) / name
+    relative = _relative_path(relative_name or upload.filename or "")
+    if not relative.parts:
+        raise FileServiceError("Invalid filename")
+    for part in relative.parts:
+        _validate_name(part)
+    destination = resolve_server_path(root, parent).joinpath(*relative.parts)
     resolve_server_path(root, destination.relative_to(root).as_posix(), allow_root=False)
-    if not plugin and (destination.suffix.lower() == ".jar" or destination.parent == root / "plugins"):
-        raise FileServiceError("Use the Paper plugin upload for plugin JAR files")
     if destination.exists():
         raise FileServiceError("A file with this name already exists")
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise FileServiceError("The upload directory could not be created") from exc
     descriptor, temporary_name = tempfile.mkstemp(prefix=".upload-", suffix=".tmp", dir=destination.parent)
     temporary = Path(temporary_name)
     total = 0
@@ -230,8 +238,6 @@ async def store_upload(
                 handle.write(chunk)
             handle.flush()
             os.fsync(handle.fileno())
-        if plugin:
-            _validate_plugin_jar(temporary)
         os.replace(temporary, destination)
         return destination
     except (OSError, zipfile.BadZipFile) as exc:
@@ -303,13 +309,3 @@ def _atomic_write(destination: Path, content: bytes, *, overwrite: bool) -> None
         raise FileServiceError("The file could not be saved") from exc
     finally:
         temporary.unlink(missing_ok=True)
-
-
-def _validate_plugin_jar(path: Path) -> None:
-    with zipfile.ZipFile(path) as archive:
-        entries = archive.infolist()
-        if len(entries) > 10_000:
-            raise FileServiceError("Plugin JAR contains too many entries")
-        names = {entry.filename for entry in entries}
-        if not names.intersection(PLUGIN_DESCRIPTOR_NAMES):
-            raise FileServiceError("JAR does not contain a Paper plugin descriptor")

@@ -785,6 +785,10 @@ async def create_server_backup(
     await record_audit(
         request, "server.backup_create", server_id=server.id, details=str(backup.id)
     )
+    if request.headers.get("X-Talos-Async") == "true":
+        return JSONResponse(
+            {"ok": True, "message": ui_message(request, "Backup created successfully")}
+        )
     return RedirectResponse(f"/servers/{server.id}#backups", status_code=303)
 
 
@@ -901,6 +905,10 @@ async def update_server_version(
         server_id=server.id,
         details=f"{update.from_version}->{update.to_version}",
     )
+    if request.headers.get("X-Talos-Async") == "true":
+        return JSONResponse(
+            {"ok": True, "message": ui_message(request, "Server update completed")}
+        )
     return RedirectResponse(f"/servers/{server.id}#updates", status_code=303)
 
 
@@ -1213,7 +1221,11 @@ async def download_server_file(
     runtime: DockerRuntime = request.app.state.runtime
     try:
         file_path = await asyncio.to_thread(
-            resolve_server_path, runtime.data_path(server.id), path, allow_root=False
+            resolve_server_path,
+            runtime.data_path(server.id),
+            path,
+            allow_root=False,
+            allow_protected=True,
         )
         if file_path.is_dir():
             archive, download_name = await asyncio.to_thread(
@@ -1256,24 +1268,43 @@ async def upload_server_file(
     request: Request,
     server_id: uuid.UUID,
     parent: str = Form(""),
-    upload: UploadFile = File(),
+    uploads: list[UploadFile] = File(),
+    relative_paths: list[str] = Form(),
     csrf_token: str = Form(),
     session: AsyncSession = Depends(get_session),
 ):
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
     runtime: DockerRuntime = request.app.state.runtime
-    upload_path = str(PurePosixPath(parent) / (upload.filename or ""))
-    await _require_safe_file_mutation(runtime, server, upload_path, "upload")
+    if len(uploads) != len(relative_paths):
+        raise HTTPException(status_code=422, detail="Invalid upload selection")
+    if not uploads:
+        raise HTTPException(status_code=422, detail="Select at least one file")
+    created = []
+    remaining_bytes = get_settings().max_file_upload_bytes
     try:
-        destination = await store_upload(
-            runtime.data_path(server.id), parent, upload, get_settings().max_file_upload_bytes
-        )
+        for upload, relative_path in zip(uploads, relative_paths, strict=True):
+            upload_path = str(PurePosixPath(parent) / relative_path)
+            await _require_safe_file_mutation(runtime, server, upload_path, "upload")
+            destination = await store_upload(
+                runtime.data_path(server.id),
+                parent,
+                upload,
+                remaining_bytes,
+                relative_name=relative_path,
+            )
+            created.append(destination)
+            remaining_bytes -= destination.stat().st_size
     except FileServiceError as exc:
+        for destination in reversed(created):
+            destination.unlink(missing_ok=True)
         raise _file_error(exc) from exc
-    relative = destination.relative_to(runtime.data_path(server.id)).as_posix()
-    await record_audit(request, "server.file_upload", server_id=server.id, details=relative)
-    return JSONResponse({"ok": True, "message": ui_message(request, "File uploaded")})
+    relative = [path.relative_to(runtime.data_path(server.id)).as_posix() for path in created]
+    await record_audit(
+        request, "server.file_upload", server_id=server.id, details=", ".join(relative)[:1000]
+    )
+    message = "File uploaded" if len(created) == 1 else "Files uploaded"
+    return JSONResponse({"ok": True, "message": ui_message(request, message)})
 
 
 @router.post("/servers/{server_id}/files/mkdir")
@@ -1346,41 +1377,6 @@ async def delete_server_file(
         raise _file_error(exc) from exc
     await record_audit(request, "server.file_delete", server_id=server.id, details=path)
     return JSONResponse({"ok": True, "message": ui_message(request, "Item moved to trash")})
-
-
-@router.post("/servers/{server_id}/plugins/upload")
-async def upload_plugin(
-    request: Request,
-    server_id: uuid.UUID,
-    upload: UploadFile = File(),
-    csrf_token: str = Form(),
-    session: AsyncSession = Depends(get_session),
-):
-    require_csrf(request, csrf_token)
-    server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
-    if server.server_type is not ServerType.PAPER:
-        raise HTTPException(status_code=409, detail="Plugins are supported only for Paper")
-    runtime: DockerRuntime = request.app.state.runtime
-    plugin_path = str(PurePosixPath("plugins") / (upload.filename or ""))
-    await _require_safe_file_mutation(runtime, server, plugin_path, "upload")
-    plugins = runtime.data_path(server.id) / "plugins"
-    await asyncio.to_thread(plugins.mkdir, parents=True, exist_ok=True)
-    try:
-        destination = await store_upload(
-            runtime.data_path(server.id),
-            "plugins",
-            upload,
-            get_settings().max_file_upload_bytes,
-            plugin=True,
-        )
-    except FileServiceError as exc:
-        raise _file_error(exc) from exc
-    await record_audit(
-        request, "server.plugin_upload", server_id=server.id, details=destination.name
-    )
-    return JSONResponse(
-        {"ok": True, "message": ui_message(request, "Plugin uploaded; start the server to load it")}
-    )
 
 
 @router.post("/servers/{server_id}/plugins/toggle")
