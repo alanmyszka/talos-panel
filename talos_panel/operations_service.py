@@ -95,34 +95,42 @@ class OperationsManager:
         if snapshot.state == "running":
             server.restart_failures = 0
         elif crashed:
-            server.restart_failures += 1
             session.add(
                 AuditEvent(
                     action="server.crash_detected",
                     server_id=server.id,
-                    details=f"state={snapshot.state}; attempt={server.restart_failures}",
+                    details=f"state={snapshot.state}",
                 )
             )
-            if server.auto_restart and server.restart_failures <= self.settings.crash_restart_limit:
-                try:
-                    container_id, state = await self.runtime.start(server)
-                    server.container_id = container_id
-                    snapshot = snapshot.__class__(container_id=container_id, state=state)
-                    session.add(
-                        AuditEvent(
-                            action="server.auto_restart",
-                            server_id=server.id,
-                            details=f"attempt={server.restart_failures}",
-                        )
+        should_retry = (
+            snapshot.state not in {"running", "created"}
+            and server.desired_state is DesiredState.RUNNING
+            and server.auto_restart
+            and server.restart_failures < self.settings.crash_restart_limit
+        )
+        if should_retry:
+            server.restart_failures += 1
+            try:
+                container_id, state = await self.runtime.start(server)
+                if state != "running":
+                    raise RuntimeError(f"Container returned state {state}")
+                server.container_id = container_id
+                snapshot = snapshot.__class__(container_id=container_id, state=state)
+                session.add(
+                    AuditEvent(
+                        action="server.auto_restart",
+                        server_id=server.id,
+                        details=f"attempt={server.restart_failures}",
                     )
-                except Exception as exc:
-                    session.add(
-                        AuditEvent(
-                            action="server.auto_restart_failed",
-                            server_id=server.id,
-                            details=str(exc)[:500],
-                        )
+                )
+            except Exception as exc:
+                session.add(
+                    AuditEvent(
+                        action="server.auto_restart_failed",
+                        server_id=server.id,
+                        details=f"attempt={server.restart_failures}; {str(exc)[:450]}",
                     )
+                )
         server.last_runtime_state = snapshot.state
 
     async def _scheduled_backup(self, server: MinecraftServer, session) -> None:
@@ -148,7 +156,7 @@ class OperationsManager:
                 self.settings.minecraft_data_root,
                 server.id,
             )
-        except BackupError as exc:
+        except (BackupError, RuntimeError) as exc:
             session.add(
                 AuditEvent(
                     action="backup.scheduled_failed",
@@ -170,6 +178,9 @@ class OperationsManager:
                 file_name=artifact.path.name,
                 size_bytes=artifact.size_bytes,
                 checksum_sha256=artifact.checksum_sha256,
+                installed_version=server.installed_version,
+                game_version=server.game_version,
+                java_version=server.java_version,
             )
         )
         server.next_backup_at = now + timedelta(hours=server.backup_interval_hours)
@@ -180,7 +191,7 @@ class OperationsManager:
                 .order_by(Backup.created_at.desc())
             )
         )
-        for expired in existing[max(0, server.backup_retention - 1) :]:
+        for expired in existing[server.backup_retention :]:
             try:
                 await asyncio.to_thread(
                     delete_backup,

@@ -204,6 +204,9 @@ class Backup(TimestampMixin, Base):
     file_name: Mapped[str] = mapped_column(String(255))
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    installed_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    game_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    java_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     server: Mapped[MinecraftServer] = relationship(back_populates="backups")
 
 

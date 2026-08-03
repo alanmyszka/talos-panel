@@ -285,6 +285,14 @@ def test_ui_polish_uses_balanced_dashboard_branding_and_static_cards() -> None:
     assert stylesheet.count("padding-top: var(--space-8)") >= 1
     assert stylesheet.count("padding-bottom: var(--space-8)") >= 1
     assert ".server-workspace .card:hover" in stylesheet
+    assert "@view-transition" not in stylesheet
+    assert "view-transition-name:" not in stylesheet
+    assert ".tab-panel:not(.hidden)" in stylesheet
+    assert "@keyframes tab-enter" in stylesheet
+    workspace_animation = stylesheet.split("@keyframes workspace-enter", 1)[1].split(
+        "@keyframes tab-enter", 1
+    )[0]
+    assert "transform:" not in workspace_animation
 
 
 def test_file_manager_uses_general_file_and_folder_uploads() -> None:
@@ -359,6 +367,8 @@ def test_players_have_profiles_and_async_administration_actions() -> None:
     assert "playerTableBody.addEventListener('click'" in detail
     assert "/players/${encodeURIComponent(button.dataset.player)}/action" in detail
     assert ".player-table" in stylesheet
+    assert ".server-workspace:has(#tab-players:not(.hidden))" in stylesheet
+    assert "overflow: auto" in stylesheet
     assert "PLAYER_ACTION_COMMANDS" in web
     assert 'f"player.{action}"' in web
     assert '/players/${encodeURIComponent(player.uuid)}/avatar' in detail
@@ -389,11 +399,27 @@ def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
     assert "restore_backup" in web
     assert "server.auto_restart" in operations
     assert "save-all flush" in operations
+    assert "existing[server.backup_retention :]" in operations
+    assert "installed_version=server.installed_version" in operations
+    assert "backup.installed_version" in web
+    assert "linked_update.from_version" in web
+    assert "Automatic backups keep a running server online" in detail
     assert ".server-workspace:has(#tab-updates:not(.hidden))" in stylesheet
     assert "#tab-updates:not(.hidden)" in stylesheet
     update_styles = stylesheet.split(".update-history {", 1)[1].split("}", 1)[0]
     assert "overflow-y: auto" in update_styles
     assert "flex: 1" in update_styles
+    assert ".server-workspace:has(#tab-monitoring:not(.hidden))" in stylesheet
+
+
+def test_access_list_uses_available_height_and_scrolls_independently() -> None:
+    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert 'class="access-members"' in detail
+    assert ".server-workspace:has(#tab-access:not(.hidden))" in stylesheet
+    member_styles = stylesheet.split(".member-list {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto" in member_styles
+    assert "flex: 1" in member_styles
 
 
 def test_small_ui_consistency_details() -> None:
@@ -417,6 +443,65 @@ def test_account_has_two_factor_sessions_and_security_review() -> None:
     assert "/account/sessions/{{ session.id }}/revoke" in account
     assert "Security review" in security
     assert "audit_action" in audit
+    assert "←" not in account
+    assert "security-summary" in security
+    assert "Source IP" in audit
+    assert "audit_server" in audit
+    assert "audit_user" in audit
+    assert "audit-pagination" in audit
+
+
+def test_user_administration_has_account_lifecycle_controls() -> None:
+    users = Path("talos_panel/templates/users.html").read_text(encoding="utf-8")
+    base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
+    auth_web = Path("talos_panel/auth_web.py").read_text(encoding="utf-8")
+    assert 'href="/account"' in base
+    assert '/admin/users/{{ user.id }}/status' in users
+    assert '/admin/users/{{ user.id }}/delete' in users
+    assert 'id="user-confirm-dialog"' in users
+    assert "You cannot disable your own account" in auth_web
+    assert "The last active administrator cannot be disabled" in auth_web
+    assert "The last administrator cannot be deleted" in auth_web
+    assert 'data-local-tab="accounts"' in users
+    assert 'data-local-tab="create"' in users
+    assert 'class="accounts-scroll"' in users
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    management_hover = stylesheet.split(".management-page .card:hover {", 1)[1].split("}", 1)[0]
+    assert "border-color: var(--line)" in management_hover
+    assert "line-strong" not in management_hover
+
+
+def test_audit_log_is_joined_filtered_and_paginated() -> None:
+    auth_web = Path("talos_panel/auth_web.py").read_text(encoding="utf-8")
+    handler = auth_web[
+        auth_web.index("async def audit_logs_page") : auth_web.index('@router.post("/admin/users")')
+    ]
+    assert ".outerjoin(User" in handler
+    assert ".outerjoin(MinecraftServer" in handler
+    assert ".limit(page_size)" in handler
+    assert 'page_size = 50' in handler
+    assert 'audit_details: str = ""' in handler
+
+
+def test_management_pages_use_local_tabs_and_single_workspaces() -> None:
+    account = Path("talos_panel/templates/account.html").read_text(encoding="utf-8")
+    security = Path("talos_panel/templates/security_review.html").read_text(encoding="utf-8")
+    audit = Path("talos_panel/templates/audit_logs.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert 'data-local-tab="password"' in account
+    assert 'data-local-tab="two-factor"' in account
+    assert 'data-local-tab="sessions"' in account
+    assert 'data-local-tab="findings"' in security
+    assert 'data-local-tab="summary"' in security
+    assert 'class="audit-header"' in audit
+    assert '<header class="audit-header"' not in audit
+    assert 'class="audit-workspace"' in audit
+    assert 'class="card audit-card"' not in audit
+    assert ".app-frame:has(.management-page)" in stylesheet
+    assert "overflow: hidden" in stylesheet
+    audit_actions = stylesheet.split(".audit-filter-actions > button,", 1)[1].split("}", 1)[0]
+    assert "width: 74px" in audit_actions
+    assert "justify-content: center" in audit_actions
 
 
 def test_all_jinja_templates_compile() -> None:

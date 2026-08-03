@@ -1,12 +1,13 @@
 import asyncio
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from urllib.parse import urlencode
 
 import pyotp
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
 from talos_panel.auth import (
     DUMMY_HASH,
@@ -269,7 +270,7 @@ async def change_password(
 
 @router.get("/admin/users", response_class=HTMLResponse)
 async def users_page(request: Request):
-    require_admin(request)
+    current_user = require_admin(request)
     async with SessionFactory() as database:
         users = list(await database.scalars(select(User).order_by(User.created_at)))
         access_by_user: dict[uuid.UUID, list[tuple[MinecraftServer, ServerMember]]] = {
@@ -290,6 +291,8 @@ async def users_page(request: Request):
         {
             "users": users,
             "access_by_user": access_by_user,
+            "current_user_id": current_user.id,
+            "message": request.query_params.get("message"),
         },
     )
 
@@ -300,25 +303,174 @@ async def security_review_page(request: Request):
     findings = await asyncio.to_thread(
         security_findings, get_settings(), request.app.state.runtime
     )
+    now = datetime.now(UTC)
+    async with SessionFactory() as database:
+        active_admins = int(
+            await database.scalar(
+                select(func.count(User.id)).where(
+                    User.role == UserRole.ADMIN, User.is_active.is_(True)
+                )
+            )
+            or 0
+        )
+        admins_with_2fa = int(
+            await database.scalar(
+                select(func.count(User.id)).where(
+                    User.role == UserRole.ADMIN,
+                    User.is_active.is_(True),
+                    User.totp_enabled.is_(True),
+                )
+            )
+            or 0
+        )
+        active_sessions = int(
+            await database.scalar(
+                select(func.count(UserSession.id)).where(
+                    UserSession.revoked_at.is_(None), UserSession.expires_at > now
+                )
+            )
+            or 0
+        )
+        failed_logins = int(
+            await database.scalar(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.action == "auth.login_failed",
+                    AuditEvent.created_at >= now - timedelta(hours=24),
+                )
+            )
+            or 0
+        )
+        server_count = int(await database.scalar(select(func.count(MinecraftServer.id))) or 0)
+    if admins_with_2fa < active_admins:
+        missing_2fa = active_admins - admins_with_2fa
+        findings.insert(
+            0,
+            {
+                "severity": "warning",
+                "title": "Administrator accounts without 2FA",
+                "detail": ui_message(
+                    request,
+                    "{count} active administrator account(s) do not use two-factor authentication.",
+                ).format(count=missing_2fa),
+            },
+        )
+    if active_admins == 1:
+        findings.append(
+            {
+                "severity": "info",
+                "title": "Single administrator account",
+                "detail": "Consider a second protected administrator account for account recovery.",
+            }
+        )
     return templates.TemplateResponse(
-        request, "security_review.html", {"security_findings": findings}
+        request,
+        "security_review.html",
+        {
+            "security_findings": findings,
+            "security_summary": {
+                "active_admins": active_admins,
+                "admins_with_2fa": admins_with_2fa,
+                "active_sessions": active_sessions,
+                "failed_logins": failed_logins,
+                "servers": server_count,
+            },
+        },
     )
 
 
 @router.get("/admin/audit", response_class=HTMLResponse)
-async def audit_logs_page(request: Request, audit_action: str = ""):
+async def audit_logs_page(
+    request: Request,
+    audit_action: str = "",
+    audit_user: str = "",
+    audit_server: str = "",
+    audit_ip: str = "",
+    audit_details: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    page: int = 1,
+):
     require_admin(request)
+    page_size = 50
+    page = max(page, 1)
+    conditions = []
+    if audit_action.strip():
+        conditions.append(AuditEvent.action.ilike(f"%{audit_action.strip()}%"))
+    if audit_ip.strip():
+        conditions.append(AuditEvent.ip_address.ilike(f"%{audit_ip.strip()}%"))
+    if audit_details.strip():
+        conditions.append(AuditEvent.details.ilike(f"%{audit_details.strip()}%"))
+    for raw_value, column in (
+        (audit_user, AuditEvent.user_id),
+        (audit_server, AuditEvent.server_id),
+    ):
+        if raw_value:
+            try:
+                conditions.append(column == uuid.UUID(raw_value))
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail="Invalid audit filter") from exc
+    for raw_value, lower_bound in ((date_from, True), (date_to, False)):
+        if raw_value:
+            try:
+                parsed = date.fromisoformat(raw_value)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail="Invalid audit date") from exc
+            boundary = datetime.combine(parsed, time.min, tzinfo=UTC)
+            conditions.append(
+                AuditEvent.created_at >= boundary
+                if lower_bound
+                else AuditEvent.created_at < boundary + timedelta(days=1)
+            )
     async with SessionFactory() as database:
-        event_query = select(AuditEvent)
-        if audit_action.strip():
-            event_query = event_query.where(AuditEvent.action.ilike(f"%{audit_action.strip()}%"))
-        events = list(
-            await database.scalars(event_query.order_by(AuditEvent.created_at.desc()).limit(200))
+        total = int(
+            await database.scalar(select(func.count(AuditEvent.id)).where(*conditions)) or 0
         )
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = min(page, total_pages)
+        events = (
+            await database.execute(
+                select(AuditEvent, User.email, MinecraftServer.name)
+                .outerjoin(User, User.id == AuditEvent.user_id)
+                .outerjoin(MinecraftServer, MinecraftServer.id == AuditEvent.server_id)
+                .where(*conditions)
+                .order_by(AuditEvent.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        ).all()
+        users = list(await database.scalars(select(User).order_by(User.email)))
+        servers = list(
+            await database.scalars(select(MinecraftServer).order_by(MinecraftServer.name))
+        )
+    filter_values = {
+        "audit_action": audit_action,
+        "audit_user": audit_user,
+        "audit_server": audit_server,
+        "audit_ip": audit_ip,
+        "audit_details": audit_details,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+    def page_url(target: int) -> str:
+        values = {key: value for key, value in filter_values.items() if value}
+        values["page"] = target
+        return f"/admin/audit?{urlencode(values)}"
+
     return templates.TemplateResponse(
         request,
         "audit_logs.html",
-        {"events": events, "audit_action": audit_action},
+        {
+            "events": events,
+            "users": users,
+            "servers": servers,
+            **filter_values,
+            "page": page,
+            "total": total,
+            "total_pages": total_pages,
+            "previous_url": page_url(page - 1) if page > 1 else None,
+            "next_url": page_url(page + 1) if page < total_pages else None,
+        },
     )
 
 
@@ -365,4 +517,73 @@ async def revoke_user_sessions(
             session.revoked_at = now
         await database.commit()
     await record_audit(request, "user.sessions_revoke", details=str(user_id))
-    return RedirectResponse("/admin/users", status_code=303)
+    return RedirectResponse("/admin/users?message=Sessions+revoked", status_code=303)
+
+
+@router.post("/admin/users/{user_id}/status")
+async def update_user_status(
+    request: Request,
+    user_id: uuid.UUID,
+    action: str = Form(pattern=r"^(enable|disable)$"),
+    csrf_token: str = Form(),
+):
+    current_user = require_admin(request)
+    require_csrf(request, csrf_token)
+    if user_id == current_user.id and action == "disable":
+        raise HTTPException(status_code=409, detail="You cannot disable your own account")
+    async with SessionFactory() as database:
+        target = await database.get(User, user_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if action == "disable" and target.role is UserRole.ADMIN and target.is_active:
+            active_admins = int(
+                await database.scalar(
+                    select(func.count(User.id)).where(
+                        User.role == UserRole.ADMIN, User.is_active.is_(True)
+                    )
+                )
+                or 0
+            )
+            if active_admins <= 1:
+                raise HTTPException(status_code=409, detail="The last active administrator cannot be disabled")
+        target.is_active = action == "enable"
+        if action == "disable":
+            now = datetime.now(UTC)
+            sessions = list(
+                await database.scalars(
+                    select(UserSession).where(
+                        UserSession.user_id == user_id, UserSession.revoked_at.is_(None)
+                    )
+                )
+            )
+            for session in sessions:
+                session.revoked_at = now
+        target_email = target.email
+        await database.commit()
+    await record_audit(request, f"user.{action}", details=f"{target_email}:{user_id}")
+    return RedirectResponse(f"/admin/users?message=User+{action}d", status_code=303)
+
+
+@router.post("/admin/users/{user_id}/delete")
+async def delete_user(request: Request, user_id: uuid.UUID, csrf_token: str = Form()):
+    current_user = require_admin(request)
+    require_csrf(request, csrf_token)
+    if user_id == current_user.id:
+        raise HTTPException(status_code=409, detail="You cannot delete your own account")
+    async with SessionFactory() as database:
+        target = await database.get(User, user_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if target.role is UserRole.ADMIN:
+            admin_count = int(
+                await database.scalar(select(func.count(User.id)).where(User.role == UserRole.ADMIN))
+                or 0
+            )
+            if admin_count <= 1:
+                raise HTTPException(status_code=409, detail="The last administrator cannot be deleted")
+        target_email = target.email
+        await database.execute(delete(ServerMember).where(ServerMember.user_id == user_id))
+        await database.delete(target)
+        await database.commit()
+    await record_audit(request, "user.delete", details=f"{target_email}:{user_id}")
+    return RedirectResponse("/admin/users?message=User+deleted", status_code=303)

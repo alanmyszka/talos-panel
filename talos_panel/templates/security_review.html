@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ t("Security review") }} · Talos Panel{% endblock %}
 {% block content %}
-<div class="title-row"><div><p class="section-label">{{ t("Administration") }}</p><h1>{{ t("Security review") }}</h1><p>{{ t("Review panel exposure and security-sensitive configuration.") }}</p></div></div>
-<section class="card security-card"><div class="security-findings">{% for finding in security_findings %}<article class="finding-{{ finding.severity }}"><strong>{{ t(finding.title) }}</strong><p>{{ t(finding.detail) }}</p></article>{% endfor %}</div></section>
+<div class="management-page security-page">
+  <div class="title-row"><div><p class="section-label">{{ t("Administration") }}</p><h1>{{ t("Security review") }}</h1><p>{{ t("Review panel exposure and security-sensitive configuration.") }}</p></div></div>
+  <nav class="local-tabs" data-local-tabs aria-label="{{ t('Security sections') }}"><button type="button" data-local-tab="findings" aria-selected="true">{{ t("Findings") }}</button><button type="button" data-local-tab="summary" aria-selected="false">{{ t("Summary") }}</button></nav>
+  <div class="local-tab-workspace security-workspace">
+    <section class="card security-card local-panel" data-local-panel="findings"><div class="overview-title"><div><h2>{{ t("Findings") }}</h2><p>{{ t("Configuration and runtime checks that require attention or provide security context.") }}</p></div></div><div class="security-findings local-scroll">{% for finding in security_findings %}<article class="finding-{{ finding.severity }}"><div><span class="finding-severity">{{ t(finding.severity) }}</span><strong>{{ t(finding.title) }}</strong></div><p>{{ t(finding.detail) }}</p></article>{% else %}<p>{{ t("No security findings.") }}</p>{% endfor %}</div></section>
+    <section class="local-panel hidden" data-local-panel="summary"><div class="security-summary"><article class="card"><span>{{ t("Active administrators") }}</span><strong>{{ security_summary.active_admins }}</strong></article><article class="card"><span>{{ t("Administrators with 2FA") }}</span><strong>{{ security_summary.admins_with_2fa }}</strong></article><article class="card"><span>{{ t("Active sessions") }}</span><strong>{{ security_summary.active_sessions }}</strong></article><article class="card"><span>{{ t("Failed logins (24h)") }}</span><strong>{{ security_summary.failed_logins }}</strong></article><article class="card"><span>{{ t("Managed servers") }}</span><strong>{{ security_summary.servers }}</strong></article></div></section>
+  </div>
+</div>
 {% endblock %}

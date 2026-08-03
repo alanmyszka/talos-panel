@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% block title %}{{ t("Audit logs") }} · Talos Panel{% endblock %}
 {% block content %}
-<div class="title-row"><div><p class="section-label">{{ t("Administration") }}</p><h1>{{ t("Audit logs") }}</h1><p>{{ t("Review recent administrative and server activity.") }}</p></div></div>
-<section class="card"><div class="overview-title"><h2>{{ t("Recent audit events") }}</h2><form class="audit-filter" method="get"><input name="audit_action" value="{{ audit_action }}" placeholder="server.start"><button class="secondary" type="submit">{{ t("Filter") }}</button></form></div><div class="audit-list">{% for event in events %}<div><code>{{ event.created_at }}</code> <strong>{{ event.action }}</strong> <span>{{ event.details or "" }}</span></div>{% else %}<p>{{ t("No events yet.") }}</p>{% endfor %}</div></section>
+<div class="management-page audit-page">
+  <div class="audit-header"><div class="title-row"><div><p class="section-label">{{ t("Administration") }}</p><h1>{{ t("Audit logs") }}</h1><p>{{ t("Review recent administrative and server activity.") }}</p></div></div>
+    <form class="audit-filter" method="get">
+      <label>{{ t("Action") }}<input name="audit_action" value="{{ audit_action }}" placeholder="server.start"></label>
+      <label>{{ t("Performed by") }}<select name="audit_user"><option value="">{{ t("All users") }}</option>{% for user in users %}<option value="{{ user.id }}" {% if audit_user == user.id|string %}selected{% endif %}>{{ user.email }}</option>{% endfor %}</select></label>
+      <label>{{ t("Server") }}<select name="audit_server"><option value="">{{ t("All servers") }}</option>{% for server in servers %}<option value="{{ server.id }}" {% if audit_server == server.id|string %}selected{% endif %}>{{ server.name }}</option>{% endfor %}</select></label>
+      <label>{{ t("Source IP") }}<input name="audit_ip" value="{{ audit_ip }}" placeholder="192.0.2.1"></label>
+      <label>{{ t("Details") }}<input name="audit_details" value="{{ audit_details }}"></label>
+      <label>{{ t("From") }}<input type="date" name="date_from" value="{{ date_from }}"></label>
+      <label>{{ t("To") }}<input type="date" name="date_to" value="{{ date_to }}"></label>
+      <div class="audit-filter-actions"><button class="secondary" type="submit">{{ t("Filter") }}</button><a class="button secondary" href="/admin/audit">{{ t("Clear") }}</a></div>
+    </form>
+  </div>
+  <section class="audit-workspace">
+    <div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>{{ t("Time") }}</th><th>{{ t("Action") }}</th><th>{{ t("Performed by") }}</th><th>{{ t("Source IP") }}</th><th>{{ t("Server") }}</th><th>{{ t("Details") }}</th></tr></thead><tbody>{% for event, actor_email, server_name in events %}<tr><td><code>{{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</code></td><td><strong>{{ event.action }}</strong></td><td>{{ actor_email or t("System or deleted user") }}</td><td><code>{{ event.ip_address or "—" }}</code></td><td>{{ server_name or "—" }}</td><td class="audit-details">{{ event.details or "—" }}</td></tr>{% else %}<tr><td colspan="6" class="empty-cell">{{ t("No events match these filters.") }}</td></tr>{% endfor %}</tbody></table></div>
+    <footer class="audit-pagination"><span>{{ t("Showing") }} {{ ((page - 1) * 50 + 1) if total else 0 }}–{{ [page * 50, total]|min }} {{ t("of") }} {{ total }}</span><div>{% if previous_url %}<a class="button secondary compact" href="{{ previous_url }}">{{ t("Previous") }}</a>{% endif %}<span>{{ t("Page") }} {{ page }} / {{ total_pages }}</span>{% if next_url %}<a class="button secondary compact" href="{{ next_url }}">{{ t("Next") }}</a>{% endif %}</div></footer>
+  </section>
+</div>
 {% endblock %}

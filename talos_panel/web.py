@@ -778,6 +778,9 @@ async def create_server_backup(
         file_name=artifact.path.name,
         size_bytes=artifact.size_bytes,
         checksum_sha256=artifact.checksum_sha256,
+        installed_version=server.installed_version,
+        game_version=server.game_version,
+        java_version=server.java_version,
     )
     session.add(backup)
     try:
@@ -864,6 +867,9 @@ async def update_server_version(
         file_name=artifact.path.name,
         size_bytes=artifact.size_bytes,
         checksum_sha256=artifact.checksum_sha256,
+        installed_version=server.installed_version,
+        game_version=server.game_version,
+        java_version=server.java_version,
     )
     session.add(backup)
     await session.flush()
@@ -993,6 +999,9 @@ async def restore_server_backup(
             file_name=safety_artifact.path.name,
             size_bytes=safety_artifact.size_bytes,
             checksum_sha256=safety_artifact.checksum_sha256,
+            installed_version=server.installed_version,
+            game_version=server.game_version,
+            java_version=server.java_version,
         )
         session.add(safety_backup)
         await session.commit()
@@ -1005,6 +1014,24 @@ async def restore_server_backup(
             settings.max_backup_restore_bytes,
             backup.checksum_sha256,
         )
+        restored_version = backup.installed_version
+        restored_game_version = backup.game_version
+        restored_java_version = backup.java_version
+        if restored_version is None:
+            linked_update = await session.scalar(
+                select(ServerUpdate)
+                .where(ServerUpdate.backup_id == backup.id)
+                .order_by(ServerUpdate.created_at.desc())
+            )
+            if linked_update is not None:
+                restored_version = linked_update.from_version
+                restored_game_version = linked_update.from_version
+                restored_java_version = java_version_for(linked_update.from_version)
+        if restored_version is not None:
+            server.installed_version = restored_version
+            server.game_version = restored_game_version or restored_version
+            server.java_version = restored_java_version or java_version_for(restored_version)
+            await session.commit()
     except BackupError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await record_audit(

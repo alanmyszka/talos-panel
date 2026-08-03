@@ -16,6 +16,7 @@
       <nav class="app-nav" aria-label="Main navigation">
         <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span></span>{{ t("Home") }}</a>
         <a class="{% if request.url.path == '/servers/new' %}active{% endif %}" href="/servers/new"><span></span>{{ t("New server") }}</a>
+        <a class="{% if request.url.path == '/account' %}active{% endif %}" href="/account"><span></span>{{ t("Account") }}</a>
         {% if request.state.user.role.value == "admin" %}
         <a class="{% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span></span>{{ t("Users") }}</a>
         <a class="{% if request.url.path == '/admin/security' %}active{% endif %}" href="/admin/security"><span></span>{{ t("Security review") }}</a>
@@ -82,6 +83,14 @@
       error(message) { finish(message, true); }
     };
   };
+  document.querySelectorAll('[data-local-tabs]').forEach(tabset => {
+    const buttons = tabset.querySelectorAll('[data-local-tab]');
+    const panels = tabset.parentElement.querySelectorAll('[data-local-panel]');
+    buttons.forEach(button => button.addEventListener('click', () => {
+      buttons.forEach(item => item.setAttribute('aria-selected', String(item === button)));
+      panels.forEach(panel => panel.classList.toggle('hidden', panel.dataset.localPanel !== button.dataset.localTab));
+    }));
+  });
   </script>
 </body>
 </html>
