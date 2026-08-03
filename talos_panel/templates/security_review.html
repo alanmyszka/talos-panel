@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ t("Security review") }} · Talos Panel{% endblock %}
+{% block content %}
+<div class="title-row"><div><p class="section-label">{{ t("Administration") }}</p><h1>{{ t("Security review") }}</h1><p>{{ t("Review panel exposure and security-sensitive configuration.") }}</p></div></div>
+<section class="card security-card"><div class="security-findings">{% for finding in security_findings %}<article class="finding-{{ finding.severity }}"><strong>{{ t(finding.title) }}</strong><p>{{ t(finding.detail) }}</p></article>{% endfor %}</div></section>
+{% endblock %}

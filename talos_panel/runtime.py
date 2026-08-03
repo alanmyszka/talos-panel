@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -8,6 +9,7 @@ import docker
 from docker.errors import APIError, NotFound
 
 from talos_panel.config import Settings
+from talos_panel.jvm_flags import startup_jvm_arguments
 from talos_panel.models import MinecraftServer
 
 
@@ -108,6 +110,7 @@ class DockerRuntime:
             profile_matches = (
                 labels.get("io.talos-panel.memory-mb") == str(server.memory_mb)
                 and labels.get("io.talos-panel.host-port") == str(server.host_port)
+                and labels.get("io.talos-panel.jvm-profile") == self._jvm_profile_hash(server)
             )
             if container.status == "running" or profile_matches:
                 if container.status != "running":
@@ -121,8 +124,9 @@ class DockerRuntime:
         data_path = self.host_data_path(server.id)
         command = [
             "java",
-            f"-Xms{server.memory_mb}M",
-            f"-Xmx{server.memory_mb}M",
+            *startup_jvm_arguments(
+                server.memory_mb, server.use_aikar_flags, server.custom_jvm_flags
+            ),
             "-jar",
             profile.jar_name,
             "nogui",
@@ -143,11 +147,17 @@ class DockerRuntime:
                 "io.talos-panel.server-id": str(server.id),
                 "io.talos-panel.memory-mb": str(server.memory_mb),
                 "io.talos-panel.host-port": str(server.host_port),
+                "io.talos-panel.jvm-profile": self._jvm_profile_hash(server),
             },
             restart_policy={"Name": "no"},
             stdin_open=True,
         )
         return container.id, "running"
+
+    @staticmethod
+    def _jvm_profile_hash(server: MinecraftServer) -> str:
+        value = f"{server.use_aikar_flags}\0{server.custom_jvm_flags}".encode()
+        return hashlib.sha256(value).hexdigest()[:16]
 
     async def use_panel_restart_policy(self, server: MinecraftServer) -> None:
         def configure() -> None:

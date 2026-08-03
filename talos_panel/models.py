@@ -116,6 +116,8 @@ class MinecraftServer(TimestampMixin, Base):
     game_version: Mapped[str] = mapped_column(String(32))
     memory_mb: Mapped[int] = mapped_column(Integer)
     host_port: Mapped[int] = mapped_column(Integer, unique=True)
+    use_aikar_flags: Mapped[bool] = mapped_column(Boolean, default=False)
+    custom_jvm_flags: Mapped[str] = mapped_column(Text, default="")
     desired_state: Mapped[DesiredState] = mapped_column(
         Enum(DesiredState, name="desired_state"), default=DesiredState.STOPPED
     )

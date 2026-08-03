@@ -33,6 +33,9 @@ PROPERTY_FIELDS = {
     "simulation-distance": "simulation_distance",
 }
 FIELD_PROPERTIES = {field: key for key, field in PROPERTY_FIELDS.items()}
+LEGACY_GAMEMODES = {"0": "survival", "1": "creative", "2": "adventure", "3": "spectator"}
+LEGACY_DIFFICULTIES = {"0": "peaceful", "1": "easy", "2": "normal", "3": "hard"}
+LIVE_SETTING_FIELDS = {"difficulty", "gamemode", "whitelist"}
 
 
 def _parse_bool(value: str) -> bool:
@@ -63,12 +66,47 @@ def read_server_properties(root: Path) -> ServerProperties:
             values[field] = _parse_bool(value)
         elif field in {"max_players", "view_distance", "simulation_distance"}:
             try:
-                values[field] = int(value)
+                parsed = int(value)
             except ValueError:
                 continue
+            minimum, maximum = (1, 1000) if field == "max_players" else (2, 32)
+            if minimum <= parsed <= maximum:
+                values[field] = parsed
+        elif field == "gamemode":
+            normalized = LEGACY_GAMEMODES.get(value.lower(), value.lower())
+            if normalized in {"survival", "creative", "adventure", "spectator"}:
+                values[field] = normalized
+        elif field == "difficulty":
+            normalized = LEGACY_DIFFICULTIES.get(value.lower(), value.lower())
+            if normalized in {"peaceful", "easy", "normal", "hard"}:
+                values[field] = normalized
+        elif field == "motd":
+            values[field] = value[:100] or ServerProperties.model_fields["motd"].default
         else:
             values[field] = value
     return ServerProperties.model_validate(values)
+
+
+def changed_setting_fields(before: ServerProperties, after: ServerProperties) -> set[str]:
+    return {
+        field
+        for field in ServerProperties.model_fields
+        if getattr(before, field) != getattr(after, field)
+    }
+
+
+def live_setting_commands(
+    before: ServerProperties, after: ServerProperties
+) -> list[tuple[str, str]]:
+    changed = changed_setting_fields(before, after)
+    commands: list[tuple[str, str]] = []
+    if "difficulty" in changed:
+        commands.append(("difficulty", f"difficulty {after.difficulty}"))
+    if "gamemode" in changed:
+        commands.append(("gamemode", f"defaultgamemode {after.gamemode}"))
+    if "whitelist" in changed:
+        commands.append(("whitelist", f"whitelist {'on' if after.whitelist else 'off'}"))
+    return commands
 
 
 def write_server_properties(root: Path, settings: ServerProperties) -> None:

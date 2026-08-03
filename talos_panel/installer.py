@@ -19,6 +19,7 @@ PAPER_PROJECT_URL = "https://fill.papermc.io/v3/projects/paper"
 VANILLA_MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 ProgressCallback = Callable[[int, int | None], Awaitable[None]]
 RELEASE_VERSION = re.compile(r"^\d+(?:\.\d+){1,2}$")
+MIN_VANILLA_SERVER_VERSION = (1, 2, 5)
 
 
 class InstallationError(Exception):
@@ -59,6 +60,14 @@ def java_version_for(game_version: str) -> int:
     return 8
 
 
+def vanilla_server_artifact_available(game_version: str) -> bool:
+    if not RELEASE_VERSION.fullmatch(game_version):
+        return False
+    parts = tuple(int(part) for part in game_version.split("."))
+    padded = parts + (0,) * (3 - len(parts))
+    return padded >= MIN_VANILLA_SERVER_VERSION
+
+
 class ArtifactResolver:
     def __init__(self, client: httpx.AsyncClient) -> None:
         self.client = client
@@ -74,7 +83,11 @@ class ArtifactResolver:
                 if RELEASE_VERSION.fullmatch(version)
             ]
         response = await self._get(VANILLA_MANIFEST_URL)
-        return [item["id"] for item in response.json()["versions"] if item["type"] == "release"]
+        return [
+            item["id"]
+            for item in response.json()["versions"]
+            if item["type"] == "release" and vanilla_server_artifact_available(item["id"])
+        ]
 
     async def resolve(self, server_type: ServerType, version: str) -> Artifact:
         if server_type is ServerType.PAPER:
@@ -101,6 +114,11 @@ class ArtifactResolver:
         )
 
     async def _resolve_vanilla(self, version: str) -> Artifact:
+        if not vanilla_server_artifact_available(version):
+            raise InstallationError(
+                "artifact_not_found",
+                "This Vanilla version has no official server JAR",
+            )
         manifest = (await self._get(VANILLA_MANIFEST_URL)).json()
         item = next(
             (entry for entry in manifest["versions"] if entry["id"] == version and entry["type"] == "release"),

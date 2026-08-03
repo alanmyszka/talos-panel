@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ t("Audit logs") }} · Talos Panel{% endblock %}
+{% block content %}
+<div class="title-row"><div><p class="section-label">{{ t("Administration") }}</p><h1>{{ t("Audit logs") }}</h1><p>{{ t("Review recent administrative and server activity.") }}</p></div></div>
+<section class="card"><div class="overview-title"><h2>{{ t("Recent audit events") }}</h2><form class="audit-filter" method="get"><input name="audit_action" value="{{ audit_action }}" placeholder="server.start"><button class="secondary" type="submit">{{ t("Filter") }}</button></form></div><div class="audit-list">{% for event in events %}<div><code>{{ event.created_at }}</code> <strong>{{ event.action }}</strong> <span>{{ event.details or "" }}</span></div>{% else %}<p>{{ t("No events yet.") }}</p>{% endfor %}</div></section>
+{% endblock %}

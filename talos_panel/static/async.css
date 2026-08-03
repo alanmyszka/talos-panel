@@ -71,7 +71,8 @@ body {
 .app-brand strong {
   display: block;
   font-family: "Press Start 2P", monospace;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 400;
   line-height: 1.5;
   letter-spacing: .04em;
 }
@@ -556,11 +557,6 @@ textarea:focus-visible {
   background: transparent;
 }
 
-.server-tabs .danger-tab[aria-selected="true"] {
-  background: #4b1f1f;
-  color: #ff7b72;
-}
-
 .tab-panel {
   min-height: 240px;
 }
@@ -572,7 +568,7 @@ textarea:focus-visible {
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  background: var(--panel);
+  background: var(--bg);
 }
 
 .server-sidebar {
@@ -1152,7 +1148,9 @@ code,
 
 @media (max-width: 920px) {
   .users-layout,
-  .access-grid {
+  .access-grid,
+  .creation-grid,
+  .jvm-section {
     grid-template-columns: 1fr;
   }
 }
@@ -1213,12 +1211,37 @@ code,
 }
 
 #console-output {
-  height: 360px;
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
   border-color: #353535;
   background: #1a1a1a;
   color: #c4c4c4;
   font-size: 12px;
   line-height: 1.8;
+}
+
+.server-workspace:has(#tab-console:not(.hidden)) {
+  display: flex;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#tab-console:not(.hidden) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.console-card {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  margin-top: 0;
 }
 
 .command-form {
@@ -1246,20 +1269,33 @@ code,
 }
 
 .dashboard-title {
-  margin-top: 4px;
+  margin: 4px 0 var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+}
+
+.dashboard-title h1 {
+  font-size: 24px;
+}
+
+.dashboard-title p:last-child {
+  margin-bottom: 0;
 }
 
 .server-list {
+  min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel-raised);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .server-list-body {
   max-height: min(640px, calc(100vh - 250px));
   overflow-y: auto;
-  scrollbar-color: var(--line-strong) var(--panel-raised);
+  scrollbar-color: var(--line-strong) var(--panel);
   scrollbar-width: thin;
 }
 
@@ -1273,7 +1309,9 @@ code,
 
 .server-list-head {
   padding: 11px var(--space-6);
-  border-bottom: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
   color: var(--muted);
   font-size: var(--text-2xs);
   font-weight: 700;
@@ -1296,7 +1334,7 @@ code,
 }
 
 .server-row:hover {
-  background: rgba(255, 255, 255, .025);
+  background: rgba(164, 143, 224, .07);
 }
 
 .server-row .server-card-identity h2 {
@@ -1565,6 +1603,19 @@ code,
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.action-reason {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  color: var(--muted);
+}
+
+.action-reason input {
+  width: 100%;
+  padding: 10px;
+  color: var(--text);
 }
 
 .file-name {
@@ -1875,12 +1926,99 @@ code,
   margin-bottom: 20px;
 }
 
+.app-frame > main:has(.server-create-page) {
+  max-width: 1500px;
+  margin-top: var(--space-8);
+  padding: 0 clamp(24px, 4vw, 56px) var(--space-12);
+}
+
+.server-create-page {
+  width: 100%;
+}
+
+.creation-page-head {
+  margin-bottom: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+}
+
+.creation-page-head h1 {
+  font-size: 24px;
+}
+
+.creation-page-head p:last-child {
+  margin-bottom: 0;
+}
+
+.server-create-form {
+  display: grid;
+  width: 100%;
+  max-width: none;
+  gap: var(--space-6);
+  margin-top: 0;
+}
+
+.server-create-form:hover {
+  border-color: var(--line);
+}
+
+.creation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+}
+
+.creation-section {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .012);
+}
+
+.creation-section h2 {
+  margin-bottom: var(--space-4);
+  font-size: 17px;
+}
+
+.jvm-section {
+  display: grid;
+  grid-template-columns: minmax(230px, .7fr) minmax(180px, .5fr) minmax(0, 1.5fr);
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.jvm-section h2,
+.jvm-section p {
+  margin-bottom: var(--space-1);
+}
+
+.jvm-section textarea {
+  width: 100%;
+  margin-top: 7px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.jvm-section .hint {
+  display: block;
+  margin-top: var(--space-2);
+  font-weight: 400;
+}
+
+.creation-submit {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .danger-zone {
-  border-color: #6e2d2d;
+  border-color: var(--line);
 }
 
 .danger-zone:hover {
-  border-color: var(--red);
+  border-color: var(--line);
 }
 
 .delete-form {
@@ -1987,9 +2125,20 @@ code,
     min-height: 560px;
   }
 
-  .server-workspace:has(#tab-files:not(.hidden)) {
+  .server-workspace:has(#tab-files:not(.hidden)),
+  .server-workspace:has(#tab-console:not(.hidden)) {
     height: auto;
     overflow: visible;
+  }
+
+  .console-card {
+    min-height: 560px;
+  }
+
+  #console-output {
+    min-height: 420px;
+    max-height: 60dvh;
+    flex: none;
   }
 
   .file-table-wrap {

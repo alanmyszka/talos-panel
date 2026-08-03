@@ -268,7 +268,7 @@ async def change_password(
 
 
 @router.get("/admin/users", response_class=HTMLResponse)
-async def users_page(request: Request, audit_action: str = ""):
+async def users_page(request: Request):
     require_admin(request)
     async with SessionFactory() as database:
         users = list(await database.scalars(select(User).order_by(User.created_at)))
@@ -284,6 +284,31 @@ async def users_page(request: Request, audit_action: str = ""):
         ).all()
         for server, membership in access_rows:
             access_by_user.setdefault(membership.user_id, []).append((server, membership))
+    return templates.TemplateResponse(
+        request,
+        "users.html",
+        {
+            "users": users,
+            "access_by_user": access_by_user,
+        },
+    )
+
+
+@router.get("/admin/security", response_class=HTMLResponse)
+async def security_review_page(request: Request):
+    require_admin(request)
+    findings = await asyncio.to_thread(
+        security_findings, get_settings(), request.app.state.runtime
+    )
+    return templates.TemplateResponse(
+        request, "security_review.html", {"security_findings": findings}
+    )
+
+
+@router.get("/admin/audit", response_class=HTMLResponse)
+async def audit_logs_page(request: Request, audit_action: str = ""):
+    require_admin(request)
+    async with SessionFactory() as database:
         event_query = select(AuditEvent)
         if audit_action.strip():
             event_query = event_query.where(AuditEvent.action.ilike(f"%{audit_action.strip()}%"))
@@ -292,16 +317,8 @@ async def users_page(request: Request, audit_action: str = ""):
         )
     return templates.TemplateResponse(
         request,
-        "users.html",
-        {
-            "users": users,
-            "events": events,
-            "access_by_user": access_by_user,
-            "audit_action": audit_action,
-            "security_findings": await asyncio.to_thread(
-                security_findings, get_settings(), request.app.state.runtime
-            ),
-        },
+        "audit_logs.html",
+        {"events": events, "audit_action": audit_action},
     )
 
 

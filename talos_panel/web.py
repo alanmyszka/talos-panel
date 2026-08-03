@@ -62,6 +62,7 @@ from talos_panel.installer import (
     JarDownloader,
     java_version_for,
 )
+from talos_panel.jvm_flags import JvmFlagsError, parse_custom_jvm_flags
 from talos_panel.minecraft_status import MinecraftStatusError, query_minecraft_status
 from talos_panel.models import (
     AuditEvent,
@@ -86,6 +87,8 @@ from talos_panel.server_lifecycle import archive_server_directory
 from talos_panel.server_settings import (
     ServerProperties,
     ServerSettingsError,
+    changed_setting_fields,
+    live_setting_commands,
     read_server_properties,
     write_server_properties,
 )
@@ -223,6 +226,8 @@ async def create_server(
     allow_flight: bool = Form(False),
     view_distance: int = Form(ge=2, le=32),
     simulation_distance: int = Form(ge=2, le=32),
+    use_aikar_flags: bool = Form(False),
+    custom_jvm_flags: str = Form("", max_length=2048),
     eula_accepted: bool = Form(False),
     csrf_token: str = Form(),
     session: AsyncSession = Depends(get_session),
@@ -231,6 +236,10 @@ async def create_server(
     require_csrf(request, csrf_token)
     if not eula_accepted:
         raise HTTPException(status_code=422, detail="Minecraft EULA acceptance is required")
+    try:
+        parse_custom_jvm_flags(custom_jvm_flags)
+    except JvmFlagsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     properties = ServerProperties(
         motd=motd,
         gamemode=gamemode,
@@ -248,6 +257,8 @@ async def create_server(
         game_version=game_version,
         memory_mb=memory_mb,
         host_port=host_port,
+        use_aikar_flags=use_aikar_flags,
+        custom_jvm_flags=custom_jvm_flags.strip(),
         settings=properties,
     )
     runtime: DockerRuntime = request.app.state.runtime
@@ -1036,6 +1047,13 @@ async def update_server_settings_ui(
 ):
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
+    runtime: DockerRuntime = request.app.state.runtime
+    try:
+        previous_properties = await asyncio.to_thread(
+            read_server_properties, runtime.data_path(server.id)
+        )
+    except ServerSettingsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     properties = ServerProperties(
         motd=motd,
         gamemode=gamemode,
@@ -1052,7 +1070,6 @@ async def update_server_settings_ui(
     server.host_port = host_port
     try:
         await session.flush()
-        runtime: DockerRuntime = request.app.state.runtime
         await asyncio.to_thread(write_server_properties, runtime.data_path(server.id), properties)
         await session.commit()
     except IntegrityError as exc:
@@ -1061,10 +1078,38 @@ async def update_server_settings_ui(
     except ServerSettingsError as exc:
         await session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    await record_audit(request, "server.settings_update", server_id=server.id)
-    message = "Settings saved. Restart the server to apply them."
-    if profile_changed:
-        message = "Settings saved. Restart will recreate the container for the new port or memory."
+    changed_fields = changed_setting_fields(previous_properties, properties)
+    _, runtime_state = await runtime.status(server)
+    applied_live: list[str] = []
+    if runtime_state == "running":
+        for field, command in live_setting_commands(previous_properties, properties):
+            try:
+                await runtime.send_command(server, command)
+                applied_live.append(field)
+            except RuntimeError:
+                # The persisted value still takes effect after restart.
+                continue
+    restart_fields = changed_fields - set(applied_live)
+    restart_required = runtime_state == "running" and bool(restart_fields or profile_changed)
+    await record_audit(
+        request,
+        "server.settings_update",
+        server_id=server.id,
+        details=(
+            f"live={','.join(applied_live) or '-'};"
+            f"restart={','.join(sorted(restart_fields)) or '-'};profile={profile_changed}"
+        ),
+    )
+    if not changed_fields and not profile_changed:
+        message = "Settings are already up to date."
+    elif restart_required and applied_live:
+        message = "Live settings applied. Remaining changes require a restart."
+    elif restart_required:
+        message = "Settings saved. Restart the server to apply them."
+    elif applied_live:
+        message = "Settings saved and applied immediately."
+    else:
+        message = "Settings saved."
     if request.headers.get("X-Talos-Async") == "true":
         return JSONResponse(
             {
@@ -1072,6 +1117,8 @@ async def update_server_settings_ui(
                 "message": ui_message(request, message),
                 "host_port": server.host_port,
                 "memory_mb": server.memory_mb,
+                "restart_required": restart_required,
+                "live_applied": applied_live,
             }
         )
     return RedirectResponse(f"/servers/{server.id}?message=Settings+saved", status_code=303)

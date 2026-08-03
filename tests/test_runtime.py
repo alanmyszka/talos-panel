@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from talos_panel.config import Settings
+from talos_panel.jvm_flags import AIKAR_FLAGS, JvmFlagsError, startup_jvm_arguments
 from talos_panel.runtime import DockerRuntime, normalize_console_command, profile_for
 
 
@@ -23,6 +24,19 @@ def test_runtime_paths_are_derived_from_server_id() -> None:
 def test_runtime_profile_uses_installed_java_version() -> None:
     server = type("Server", (), {"java_version": 25})()
     assert profile_for(server).image == "eclipse-temurin:25-jre"
+
+
+def test_jvm_startup_arguments_include_safe_custom_and_optional_aikar_flags() -> None:
+    arguments = startup_jvm_arguments(4096, True, "-Dexample.enabled=true")
+    assert arguments[:2] == ["-Xms4096M", "-Xmx4096M"]
+    assert list(AIKAR_FLAGS) == arguments[2:-1]
+    assert arguments[-1] == "-Dexample.enabled=true"
+
+
+def test_jvm_startup_arguments_reject_managed_or_entrypoint_flags() -> None:
+    for flags in ("-Xmx64G", "-jar other.jar", "-javaagent:plugin.jar", "plain-value"):
+        with pytest.raises(JvmFlagsError):
+            startup_jvm_arguments(4096, False, flags)
 
 
 @pytest.mark.asyncio

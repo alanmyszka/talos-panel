@@ -16,7 +16,11 @@
       <nav class="app-nav" aria-label="Main navigation">
         <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span></span>{{ t("Home") }}</a>
         <a class="{% if request.url.path == '/servers/new' %}active{% endif %}" href="/servers/new"><span></span>{{ t("New server") }}</a>
-        {% if request.state.user.role.value == "admin" %}<a class="{% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span></span>{{ t("Users") }}</a>{% endif %}
+        {% if request.state.user.role.value == "admin" %}
+        <a class="{% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span></span>{{ t("Users") }}</a>
+        <a class="{% if request.url.path == '/admin/security' %}active{% endif %}" href="/admin/security"><span></span>{{ t("Security review") }}</a>
+        <a class="{% if request.url.path == '/admin/audit' %}active{% endif %}" href="/admin/audit"><span></span>{{ t("Audit logs") }}</a>
+        {% endif %}
       </nav>
       {% include "_sidebar_utilities.html" %}
     </aside>

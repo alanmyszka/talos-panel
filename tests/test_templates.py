@@ -1,11 +1,20 @@
 from pathlib import Path
 
+from jinja2 import Environment, FileSystemLoader
+
 from talos_panel.web import minecraft_is_ready, player_snapshot
 
 
 def test_console_script_targets_command_input_not_csrf_input() -> None:
     template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
     assert "'.command-form input[name=\"command\"]'" in template
+
+
+def test_console_uses_the_available_workspace_height() -> None:
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert ".server-workspace:has(#tab-console:not(.hidden))" in stylesheet
+    assert "#tab-console:not(.hidden)" in stylesheet
+    assert ".console-card {" in stylesheet
 
 
 def test_player_snapshot_uses_latest_list_response() -> None:
@@ -29,7 +38,12 @@ def test_minecraft_ready_requires_a_running_container() -> None:
 def test_delete_form_requires_typed_confirmation() -> None:
     template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
     assert "confirmation.value !== deleteForm.dataset.serverName" in template
-    assert "window.confirm(" in template
+    assert "window.confirm(" not in template
+    assert "window.prompt(" not in template
+    assert 'id="action-confirm-dialog"' in template
+    assert 'id="server-delete-dialog"' in template
+    assert "Delete this server from Talos Panel?" not in template
+    assert "deleteDialog.showModal()" in template
 
 
 def test_server_detail_uses_role_aware_client_side_tabs() -> None:
@@ -48,6 +62,17 @@ def test_dashboard_uses_runtime_state_and_completed_installation_is_hidden() -> 
     assert 'display_state = "offline"' in index
     assert 'server.installation_state.value != "completed"' in detail
     assert 'job.state.value != "completed"' in installation
+
+
+def test_dashboard_server_rows_are_not_wrapped_in_a_card() -> None:
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    dashboard_styles = stylesheet[stylesheet.index(".dashboard-title {") :]
+    server_list_rule = dashboard_styles[
+        dashboard_styles.index(".server-list {") : dashboard_styles.index(".server-list-body {")
+    ]
+    assert "border: 0" in server_list_rule
+    assert "background: transparent" in server_list_rule
+    assert ".dashboard-title" in stylesheet
 
 
 def test_file_manager_is_a_server_tab_and_uses_safe_dom_rendering() -> None:
@@ -163,6 +188,8 @@ def test_sidebar_navigation_and_server_identity_are_consistent() -> None:
     utilities = Path("talos_panel/templates/_sidebar_utilities.html").read_text(encoding="utf-8")
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert base.index('href="/admin/users"') < base.index('{% include "_sidebar_utilities.html" %}')
+    assert 'href="/admin/security"' in base
+    assert 'href="/admin/audit"' in base
     assert utilities.index('class="sidebar-identity"') < utilities.index('class="language-switch"')
     assert 'class="app-brand" href="/"' in detail
     assert 'class="server-heading-identity"' in detail
@@ -324,13 +351,30 @@ def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
 def test_account_has_two_factor_sessions_and_security_review() -> None:
     account = Path("talos_panel/templates/account.html").read_text(encoding="utf-8")
     login = Path("talos_panel/templates/login.html").read_text(encoding="utf-8")
-    users = Path("talos_panel/templates/users.html").read_text(encoding="utf-8")
+    security = Path("talos_panel/templates/security_review.html").read_text(encoding="utf-8")
+    audit = Path("talos_panel/templates/audit_logs.html").read_text(encoding="utf-8")
     assert 'action="/account/2fa"' in account
     assert "totp_code" in login
     assert "Active sessions" in account
     assert "/account/sessions/{{ session.id }}/revoke" in account
-    assert "Security review" in users
-    assert "audit_action" in users
+    assert "Security review" in security
+    assert "audit_action" in audit
+
+
+def test_all_jinja_templates_compile() -> None:
+    environment = Environment(loader=FileSystemLoader("talos_panel/templates"))
+    for template_name in environment.list_templates():
+        environment.get_template(template_name)
+
+
+def test_server_creation_uses_full_width_sections_and_jvm_options() -> None:
+    template = Path("talos_panel/templates/new_server.html").read_text(encoding="utf-8")
+    stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
+    assert 'class="server-create-page"' in template
+    assert 'name="use_aikar_flags"' in template
+    assert 'name="custom_jvm_flags"' in template
+    assert ".server-create-form:hover" in stylesheet
+    assert "font-weight: 400" in stylesheet
 
 
 def test_stop_intent_is_persisted_before_stopping_container() -> None:

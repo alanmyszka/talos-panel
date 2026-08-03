@@ -18,6 +18,18 @@ def test_server_create_rejects_unbounded_memory() -> None:
         )
 
 
+def test_server_create_rejects_jvm_entrypoint_overrides() -> None:
+    with pytest.raises(ValidationError):
+        ServerCreate(
+            name="Survival",
+            server_type="paper",
+            game_version="1.21.4",
+            memory_mb=4096,
+            host_port=25565,
+            custom_jvm_flags="-Xmx64G -jar malware.jar",
+        )
+
+
 def test_server_settings_enforce_backend_bounds() -> None:
     with pytest.raises(ValidationError):
         ServerSettingsUpdate(

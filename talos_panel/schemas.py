@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from talos_panel.jvm_flags import JvmFlagsError, parse_custom_jvm_flags
 from talos_panel.models import DesiredState, InstallationState, ServerType
 from talos_panel.server_settings import ServerProperties
 
@@ -13,7 +14,18 @@ class ServerCreate(BaseModel):
     game_version: str = Field(min_length=1, max_length=32, pattern=r"^[0-9A-Za-z._+-]+$")
     memory_mb: int = Field(ge=1024, le=32768)
     host_port: int = Field(ge=1024, le=65535)
+    use_aikar_flags: bool = False
+    custom_jvm_flags: str = Field(default="", max_length=2048)
     settings: ServerProperties = Field(default_factory=ServerProperties)
+
+    @field_validator("custom_jvm_flags")
+    @classmethod
+    def validate_custom_jvm_flags(cls, value: str) -> str:
+        try:
+            parse_custom_jvm_flags(value)
+        except JvmFlagsError as exc:
+            raise ValueError(str(exc)) from exc
+        return value.strip()
 
 
 class ServerRead(BaseModel):

@@ -10,10 +10,13 @@ from talos_panel.config import Settings
 from talos_panel.installer import (
     RELEASE_VERSION,
     Artifact,
+    ArtifactResolver,
     InstallationError,
     JarDownloader,
     java_version_for,
+    vanilla_server_artifact_available,
 )
+from talos_panel.models import ServerType
 
 
 def jar_bytes() -> bytes:
@@ -33,6 +36,32 @@ def test_release_filter_rejects_prereleases() -> None:
     assert RELEASE_VERSION.fullmatch("1.21.11")
     assert RELEASE_VERSION.fullmatch("26.1.2")
     assert not RELEASE_VERSION.fullmatch("1.21.11-rc1")
+
+
+def test_vanilla_versions_without_official_server_jar_are_rejected() -> None:
+    assert not vanilla_server_artifact_available("1.0")
+    assert not vanilla_server_artifact_available("1.2.4")
+    assert vanilla_server_artifact_available("1.2.5")
+    assert vanilla_server_artifact_available("1.21.11")
+    assert not vanilla_server_artifact_available("1.21-rc1")
+
+
+@pytest.mark.asyncio
+async def test_vanilla_version_list_hides_client_only_releases() -> None:
+    manifest = {
+        "versions": [
+            {"id": "1.21.11", "type": "release"},
+            {"id": "1.2.5", "type": "release"},
+            {"id": "1.2.4", "type": "release"},
+            {"id": "1.0", "type": "release"},
+            {"id": "1.22-pre1", "type": "snapshot"},
+        ]
+    }
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=manifest))
+    async with httpx.AsyncClient(transport=transport) as client:
+        versions = await ArtifactResolver(client).versions(ServerType.VANILLA)
+
+    assert versions == ["1.21.11", "1.2.5"]
 
 
 @pytest.mark.asyncio
