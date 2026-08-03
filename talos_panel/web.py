@@ -3,6 +3,7 @@ import re
 import shutil
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import PurePosixPath
 
 import httpx
 from fastapi import (
@@ -40,6 +41,7 @@ from talos_panel.file_service import (
     create_directory,
     create_directory_archive,
     list_directory,
+    mutation_requires_stopped_server,
     read_text_file,
     resolve_server_path,
     set_plugin_enabled,
@@ -298,6 +300,28 @@ async def _require_stopped(
     _, state = await runtime.status(server)
     if state == "running":
         raise HTTPException(status_code=409, detail=message)
+
+
+async def _require_safe_file_mutation(
+    runtime: DockerRuntime,
+    server: MinecraftServer,
+    path: str,
+    operation: str,
+) -> None:
+    _, state = await runtime.status(server)
+    if state != "running":
+        return
+    try:
+        requires_stop = mutation_requires_stopped_server(
+            runtime.data_path(server.id), path, operation
+        )
+    except FileServiceError as exc:
+        raise _file_error(exc) from exc
+    if requires_stop:
+        raise HTTPException(
+            status_code=409,
+            detail="Stop the server before changing active world data, databases, logs, or loaded JARs",
+        )
 
 
 def _file_error(exc: FileServiceError) -> HTTPException:
@@ -1192,7 +1216,8 @@ async def upload_server_file(
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
     runtime: DockerRuntime = request.app.state.runtime
-    await _require_stopped(runtime, server)
+    upload_path = str(PurePosixPath(parent) / (upload.filename or ""))
+    await _require_safe_file_mutation(runtime, server, upload_path, "upload")
     try:
         destination = await store_upload(
             runtime.data_path(server.id), parent, upload, get_settings().max_file_upload_bytes
@@ -1216,7 +1241,8 @@ async def create_server_directory(
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
     runtime: DockerRuntime = request.app.state.runtime
-    await _require_stopped(runtime, server)
+    directory_path = str(PurePosixPath(parent) / name)
+    await _require_safe_file_mutation(runtime, server, directory_path, "mkdir")
     try:
         destination = await asyncio.to_thread(
             create_directory, runtime.data_path(server.id), parent, name
@@ -1240,7 +1266,7 @@ async def save_server_text_file(
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
     runtime: DockerRuntime = request.app.state.runtime
-    await _require_stopped(runtime, server)
+    await _require_safe_file_mutation(runtime, server, path, "edit")
     try:
         await asyncio.to_thread(
             write_text_file,
@@ -1266,7 +1292,7 @@ async def delete_server_file(
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
     runtime: DockerRuntime = request.app.state.runtime
-    await _require_stopped(runtime, server)
+    await _require_safe_file_mutation(runtime, server, path, "delete")
     try:
         await asyncio.to_thread(archive_path, runtime.data_path(server.id), path)
     except FileServiceError as exc:
@@ -1288,7 +1314,8 @@ async def upload_plugin(
     if server.server_type is not ServerType.PAPER:
         raise HTTPException(status_code=409, detail="Plugins are supported only for Paper")
     runtime: DockerRuntime = request.app.state.runtime
-    await _require_stopped(runtime, server)
+    plugin_path = str(PurePosixPath("plugins") / (upload.filename or ""))
+    await _require_safe_file_mutation(runtime, server, plugin_path, "upload")
     plugins = runtime.data_path(server.id) / "plugins"
     await asyncio.to_thread(plugins.mkdir, parents=True, exist_ok=True)
     try:
@@ -1323,7 +1350,7 @@ async def toggle_plugin(
     if server.server_type is not ServerType.PAPER:
         raise HTTPException(status_code=409, detail="Plugins are supported only for Paper")
     runtime: DockerRuntime = request.app.state.runtime
-    await _require_stopped(runtime, server)
+    await _require_safe_file_mutation(runtime, server, path, "plugin_toggle")
     try:
         destination = await asyncio.to_thread(
             set_plugin_enabled, runtime.data_path(server.id), path, enabled

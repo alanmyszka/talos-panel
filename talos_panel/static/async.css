@@ -1363,15 +1363,49 @@ code,
   border-color: var(--line);
 }
 
+.files-card {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.server-workspace:has(#tab-files:not(.hidden)) {
+  display: flex;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#tab-files:not(.hidden) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
 .file-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 18px 0;
+  gap: 10px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--panel-raised);
 }
 
 .file-toolbar code {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-toolbar button {
+  min-height: 32px;
+  padding: 5px 10px;
 }
 
 .file-actions {
@@ -1383,12 +1417,13 @@ code,
 
 .file-actions form,
 .plugin-upload {
-  display: flex;
-  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
   gap: 8px;
 }
 
-.file-actions input:not([type="hidden"]),
+.file-actions input:not([type="hidden"]):not([type="file"]),
 .plugin-upload input {
   min-width: 0;
   width: 100%;
@@ -1399,7 +1434,60 @@ code,
   color: var(--text);
 }
 
+.file-actions input:not([type="hidden"]):not([type="file"]),
+.file-actions button {
+  height: 42px;
+  min-height: 42px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.file-picker {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 42px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-picker-button {
+  display: flex;
+  height: 100%;
+  flex: none;
+  align-items: center;
+  padding: 0 12px;
+  border-right: 1px solid var(--line);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.file-picker-name {
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .plugin-upload {
+  grid-template-columns: minmax(0, 1fr) max-content minmax(180px, auto);
   margin-bottom: 18px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -1412,7 +1500,12 @@ code,
 }
 
 .file-table-wrap {
-  overflow-x: auto;
+  min-height: 220px;
+  max-height: none;
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
 }
 
 .file-table {
@@ -1431,6 +1524,47 @@ code,
   color: var(--muted);
   font-size: 13px;
   text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+
+.confirm-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 45%);
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(6 8 12 / 68%);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-dialog form {
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+}
+
+.confirm-dialog h2,
+.confirm-dialog p {
+  margin: 0 0 8px;
+}
+
+.file-delete-message {
+  overflow-wrap: anywhere;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .file-name {
@@ -1844,8 +1978,23 @@ code,
 
   .file-actions form,
   .plugin-upload {
+    display: flex;
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .files-card {
+    min-height: 560px;
+  }
+
+  .server-workspace:has(#tab-files:not(.hidden)) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .file-table-wrap {
+    max-height: 55dvh;
+    flex: none;
   }
 
   .server-shell {

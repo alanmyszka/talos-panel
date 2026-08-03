@@ -14,7 +14,7 @@
     <aside class="app-sidebar">
       <a class="app-brand" href="/"><strong>Talos Panel</strong></a>
       <nav class="app-nav" aria-label="Main navigation">
-        <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span></span>{{ t("Servers") }}</a>
+        <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span></span>{{ t("Home") }}</a>
         <a class="{% if request.url.path == '/servers/new' %}active{% endif %}" href="/servers/new"><span></span>{{ t("New server") }}</a>
         {% if request.state.user.role.value == "admin" %}<a class="{% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span></span>{{ t("Users") }}</a>{% endif %}
       </nav>

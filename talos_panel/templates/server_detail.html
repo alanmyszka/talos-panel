@@ -6,7 +6,7 @@
 <div class="server-shell"><aside class="server-sidebar">
   <a class="app-brand" href="/"><strong>Talos Panel</strong></a>
   <div class="server-navigation">
-  <a class="server-home-link" href="/"><span></span>{{ t("Servers") }}</a>
+  <a class="server-home-link" href="/"><span></span>{{ t("Home") }}</a>
 <nav class="server-tabs" role="tablist" aria-label="Server sections">
   <button type="button" role="tab" data-tab="overview" aria-controls="tab-overview" aria-selected="true"><span></span>{{ t("Dashboard") }}</button>
   <button type="button" role="tab" data-tab="console" aria-controls="tab-console" aria-selected="false"><span></span>{{ t("Console") }}</button>
@@ -77,14 +77,9 @@
 <div id="tab-files" class="tab-panel hidden" data-tab-panel="files" role="tabpanel">
 <section class="card files-card">
   <div class="overview-title"><div><h2>{{ t("File manager") }}</h2></div><span class="status">{% if can_manage %}{{ t("Read / write") }}{% else %}{{ t("Read only") }}{% endif %}</span></div>
-  {% if can_manage %}<p class="hint">{{ t("Stop the server before uploading, editing, creating, deleting, or changing plugins.") }}</p>{% endif %}
-  <div class="file-toolbar">
-    <button id="files-up" class="secondary" type="button">{{ t("Up") }}</button>
-    <code id="files-path">/</code>
-  </div>
   {% if can_manage %}
   <div class="file-actions">
-    <form id="file-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><input type="file" name="upload" required><button type="submit">{{ t("Upload file") }}</button></form>
+    <form id="file-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="upload" required><span class="file-picker-button">{{ t("Browse") }}</span><span class="file-picker-name">{{ t("No file selected") }}</span></label><button type="submit">{{ t("Upload file") }}</button></form>
     <form id="mkdir-form" action="/servers/{{ server.id }}/files/mkdir"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><input name="name" maxlength="255" placeholder="{{ t('New directory') }}" required><button type="submit" class="secondary">{{ t("Create directory") }}</button></form>
   </div>
   {% if server.server_type.value == "paper" %}
@@ -92,11 +87,16 @@
   {% endif %}
   {% endif %}
   <div id="files-error" class="error hidden"></div>
+  <div class="file-toolbar">
+    <button id="files-up" class="secondary" type="button">← {{ t("Up") }}</button>
+    <code id="files-path">/</code>
+  </div>
   <div class="file-table-wrap"><table class="file-table"><thead><tr><th>{{ t("Name") }}</th><th>{{ t("Size") }}</th><th>{{ t("Actions") }}</th></tr></thead><tbody id="files-body"><tr><td colspan="3">{{ t("Loading…") }}</td></tr></tbody></table></div>
   {% if can_manage %}
   <form id="text-editor" class="text-editor hidden" action="/servers/{{ server.id }}/files/text"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input id="editor-path" type="hidden" name="path"><div class="overview-title"><h3 id="editor-title">{{ t("Edit file") }}</h3><button id="editor-close" class="secondary" type="button">{{ t("Close") }}</button></div><textarea name="content" spellcheck="false"></textarea><div class="editor-footer"><button type="submit">{{ t("Save file") }}</button><span class="editor-state hint" aria-live="polite"></span></div></form>
   {% endif %}
 </section>
+{% if can_manage %}<dialog id="file-delete-dialog" class="confirm-dialog"><form method="dialog"><div><h2>{{ t("Delete item") }}</h2><p class="file-delete-message"></p><p class="hint">{{ t("The item will be moved to the Talos trash.") }}</p></div><div class="dialog-actions"><button value="cancel" class="secondary" type="submit">{{ t("Cancel") }}</button><button id="file-delete-confirm" value="confirm" class="danger" type="submit">{{ t("Delete") }}</button></div></form></dialog>{% endif %}
 </div>
 
 {% if can_manage %}
@@ -240,9 +240,17 @@ let actionPending = false;
 let minecraftReady = false;
 let startedAt = null;
 let installationComplete = {{ "true" if server.installation_state and server.installation_state.value == "completed" else "false" }};
+let latestConsoleData = null;
 
 function consoleIsNearBottom() {
   return output.scrollHeight - output.scrollTop - output.clientHeight <= 32;
+}
+
+function renderConsoleOutput(data) {
+  const followConsole = consoleIsNearBottom();
+  const previousConsoleScroll = output.scrollTop;
+  output.textContent = data.logs || (data.state === 'running' ? 'Server is starting…' : 'No logs yet. Start the server to see its console.');
+  output.scrollTop = followConsole ? output.scrollHeight : previousConsoleScroll;
 }
 
 function playerInitials(name) {
@@ -369,6 +377,7 @@ function selectTab(name, updateHash = true) {
   if (updateHash) history.replaceState(null, '', `#${selected.dataset.tab}`);
   if (selected.dataset.tab === 'console') {
     requestAnimationFrame(() => {
+      if (latestConsoleData) renderConsoleOutput(latestConsoleData);
       output.scrollTop = output.scrollHeight;
       if (!commandInput.disabled) commandInput.focus();
     });
@@ -587,6 +596,8 @@ async function submitFileForm(form) {
       form.querySelector('.editor-state').textContent = ui.saved;
     } else {
       form.reset();
+      const fileName = form.querySelector('.file-picker-name');
+      if (fileName) fileName.textContent = {{ t("No file selected")|tojson }};
     }
     document.querySelectorAll('.file-parent').forEach(input => { input.value = currentFilePath; });
     await loadFiles(currentFilePath);
@@ -635,10 +646,20 @@ async function fileMutation(url, values) {
 }
 
 async function deleteFile(path) {
-  if (!window.confirm(`Move ${path} to the Talos trash?`)) return;
+  const dialog = document.querySelector('#file-delete-dialog');
+  if (!dialog) return;
+  dialog.dataset.path = path;
+  dialog.querySelector('.file-delete-message').textContent = path;
+  dialog.showModal();
+}
+
+const fileDeleteDialog = document.querySelector('#file-delete-dialog');
+if (fileDeleteDialog) fileDeleteDialog.addEventListener('close', async () => {
+  if (fileDeleteDialog.returnValue !== 'confirm') return;
+  const path = fileDeleteDialog.dataset.path;
   try { await fileMutation(`/servers/{{ server.id }}/files/delete`, {path}); }
   catch (error) { showNotice(error.message, true); }
-}
+});
 
 async function togglePlugin(path, enabled) {
   try { await fileMutation(`/servers/{{ server.id }}/plugins/toggle`, {path, enabled: String(enabled)}); }
@@ -767,13 +788,22 @@ document.querySelectorAll('.backup-delete-form').forEach(form => form.addEventLi
   if (!window.confirm({{ t("Delete this backup permanently?")|tojson }})) event.preventDefault();
 }));
 const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+document.querySelectorAll('.files-card input[type="file"]').forEach(input => {
+  const updateFileName = () => {
+    const name = input.closest('.file-picker')?.querySelector('.file-picker-name');
+    if (name) name.textContent = input.files?.[0]?.name || {{ t("No file selected")|tojson }};
+  };
+  input.addEventListener('change', updateFileName);
+  input.addEventListener('cancel', updateFileName);
+});
+
 const socket = new WebSocket(`${protocol}://${location.host}/servers/{{ server.id }}/console`);
 socket.onmessage = event => {
   const data = JSON.parse(event.data);
-  const followConsole = consoleIsNearBottom();
-  const previousConsoleScroll = output.scrollTop;
-  output.textContent = data.logs || (data.state === 'running' ? 'Server is starting…' : 'No logs yet. Start the server to see its console.');
-  output.scrollTop = followConsole ? output.scrollHeight : previousConsoleScroll;
+  latestConsoleData = data;
+  if (!document.querySelector('[data-tab-panel="console"]').classList.contains('hidden')) {
+    renderConsoleOutput(data);
+  }
   runtimeBadge.textContent = data.state.replace('_', ' ');
   runtimeBadge.className = `status state-${data.state}`;
   startForm.classList.toggle('hidden', data.state === 'running' || !installationComplete);

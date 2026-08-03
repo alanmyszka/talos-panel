@@ -10,6 +10,7 @@ from talos_panel.file_service import (
     archive_path,
     create_directory_archive,
     list_directory,
+    mutation_requires_stopped_server,
     read_text_file,
     resolve_server_path,
     store_upload,
@@ -125,3 +126,17 @@ def test_delete_moves_item_to_server_trash(tmp_path: Path) -> None:
     assert archived.read_bytes() == b"world"
     assert archived.is_relative_to(tmp_path / ".trash" / "files")
     assert not target.exists()
+
+
+def test_live_mutations_only_protect_active_server_data(tmp_path: Path) -> None:
+    (tmp_path / "server.properties").write_text("level-name=survival\n", encoding="utf-8")
+    (tmp_path / "survival" / "region").mkdir(parents=True)
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "Loaded.jar").write_bytes(b"jar")
+
+    assert not mutation_requires_stopped_server(tmp_path, "server.properties", "edit")
+    assert not mutation_requires_stopped_server(tmp_path, "configs/new", "mkdir")
+    assert not mutation_requires_stopped_server(tmp_path, "plugins/New.jar", "upload")
+    assert mutation_requires_stopped_server(tmp_path, "survival/region/r.0.0.mca", "delete")
+    assert mutation_requires_stopped_server(tmp_path, "plugins/Loaded.jar", "delete")
+    assert mutation_requires_stopped_server(tmp_path, "plugins/Loaded.jar", "plugin_toggle")

@@ -56,6 +56,11 @@ def test_file_manager_is_a_server_tab_and_uses_safe_dom_rendering() -> None:
     assert 'data-tab-panel="files"' in template
     assert "name.textContent" in template
     assert "encodeURIComponent(entry.path)" in template
+    assert "file-delete-dialog" in template
+    assert "Move ${path} to the Talos trash?" not in template
+    assert "Stop the server before uploading, editing, creating, deleting" not in template
+    assert "renderConsoleOutput" in template
+    assert 'class="file-picker"' in template
 
 
 def test_notifications_use_toasts_and_editor_content_is_not_reset_after_save() -> None:

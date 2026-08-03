@@ -13,6 +13,8 @@ HIDDEN_ROOT_NAMES = {".trash", "eula.txt", "server.jar"}
 PROTECTED_ROOT_NAMES = {".trash", "eula.txt", "server.jar"}
 PLUGIN_DESCRIPTOR_NAMES = {"plugin.yml", "paper-plugin.yml"}
 SAFE_PLUGIN_NAME = re.compile(r"^[A-Za-z0-9._ -]+\.jar$")
+LIVE_PROTECTED_SUFFIXES = {".dat", ".db", ".ldb", ".log", ".mca", ".sqlite", ".sqlite3"}
+LIVE_PROTECTED_NAMES = {"level.dat", "level.dat_old", "session.lock"}
 
 
 class FileServiceError(Exception):
@@ -26,6 +28,41 @@ class FileEntry:
     is_directory: bool
     size: int | None
     editable: bool
+
+
+def mutation_requires_stopped_server(root: Path, value: str, operation: str) -> bool:
+    """Return whether changing a path while Minecraft is running is unsafe.
+
+    Ordinary configuration and newly uploaded files are safe because Talos writes
+    them atomically. Live world data, databases, logs and loaded plugin JARs are
+    kept immutable until the server stops.
+    """
+    path = resolve_server_path(root, value, allow_root=False)
+    relative = path.relative_to(root)
+    parts = relative.parts
+    lowered_parts = tuple(part.lower() for part in parts)
+    name = path.name.lower()
+
+    if operation == "plugin_toggle":
+        return True
+    if name in LIVE_PROTECTED_NAMES or path.suffix.lower() in LIVE_PROTECTED_SUFFIXES:
+        return True
+    if "plugins" in lowered_parts and name.endswith((".jar", ".jar.disabled")):
+        # A brand-new plugin is not loaded until restart. Existing plugin JARs
+        # must not be moved or removed while the JVM may still use them.
+        return operation != "upload" or path.exists()
+
+    level_name = "world"
+    properties = root / "server.properties"
+    try:
+        for line in properties.read_text(encoding="utf-8").splitlines():
+            if line.startswith("level-name=") and line.partition("=")[2].strip():
+                level_name = line.partition("=")[2].strip()
+                break
+    except (OSError, UnicodeError):
+        pass
+    world_roots = {level_name.lower(), f"{level_name.lower()}_nether", f"{level_name.lower()}_the_end"}
+    return bool(lowered_parts and lowered_parts[0] in world_roots)
 
 
 def _relative_path(value: str) -> PurePosixPath:

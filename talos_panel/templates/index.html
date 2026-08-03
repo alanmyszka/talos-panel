@@ -2,9 +2,9 @@
 {% block content %}
 <div class="dashboard-page">
 {% if request.query_params.get("message") %}<script>window.addEventListener('DOMContentLoaded', () => window.talosToast({{ t(request.query_params.get("message"))|tojson }}));</script>{% endif %}
-<div class="title-row dashboard-title"><div><p class="section-label">{{ t("Infrastructure") }}</p><h1>{{ t("Servers") }}</h1><p>{{ t("Install and manage Paper and Vanilla servers.") }}</p></div><a class="button" href="/servers/new">+ {{ t("New server") }}</a></div>
+<div class="title-row dashboard-title"><div><p class="section-label">{{ t("Home") }}</p><h1>{{ t("Servers") }}</h1><p>{{ t("Install and manage Minecraft servers") }}</p></div><a class="button" href="/servers/new">+ {{ t("Create new server") }}</a></div>
 <section class="server-list">
-<div class="server-list-head"><span>{{ t("Server") }}</span><span>{{ t("Address") }}</span><span>{{ t("Software") }}</span><span>{{ t("Players") }}</span><span>{{ t("Uptime") }}</span><span>{{ t("Status") }}</span></div>
+<div class="server-list-head"><span>{{ t("Server") }}</span><span>{{ t("Address") }}</span><span>{{ t("Version") }}</span><span>{{ t("Players") }}</span><span>{{ t("Uptime") }}</span><span>{{ t("Status") }}</span></div>
 <div class="server-list-body">
 {% for card in cards %}
   {% set server = card.server %}
