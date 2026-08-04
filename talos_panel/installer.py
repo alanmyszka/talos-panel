@@ -46,15 +46,12 @@ def java_version_for(game_version: str) -> int:
         if parts[0].isdigit() and int(parts[0]) >= 26:
             return 25
         minor = int(parts[1])
-        patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
     except (IndexError, ValueError) as exc:
         raise InstallationError("unsupported_version", "Unsupported Minecraft version") from exc
     if minor >= 20:
         return 21
     if minor >= 17:
         return 17
-    if minor == 16 and patch >= 5:
-        return 16
     if minor >= 12:
         return 11
     return 8

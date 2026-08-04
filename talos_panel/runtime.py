@@ -32,7 +32,6 @@ class RuntimeSnapshot:
 SUPPORTED_JAVA_IMAGES = {
     8: "eclipse-temurin:8-jre",
     11: "eclipse-temurin:11-jre",
-    16: "eclipse-temurin:16-jre",
     17: "eclipse-temurin:17-jre",
     21: "eclipse-temurin:21-jre",
     25: "eclipse-temurin:25-jre",
