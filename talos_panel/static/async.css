@@ -1950,6 +1950,7 @@ code,
 }
 
 .server-list-empty {
+  margin-top: 20px;
   border: 0;
   text-align: center;
 }

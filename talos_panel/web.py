@@ -1529,8 +1529,9 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
         runtime: DockerRuntime = websocket.app.state.runtime
         settings = get_settings()
         previous = None
+        receive_task = asyncio.create_task(websocket.receive())
         try:
-            while not websocket.app.state.shutting_down.is_set():
+            while True:
                 snapshot = await runtime.snapshot(server)
                 minecraft = None
                 if snapshot.state == "running":
@@ -1561,11 +1562,22 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
                 if payload != previous:
                     await websocket.send_json(payload)
                     previous = payload
-                await asyncio.sleep(2)
+                done, _ = await asyncio.wait({receive_task}, timeout=2)
+                if receive_task in done:
+                    message = receive_task.result()
+                    if message["type"] == "websocket.disconnect":
+                        break
+                    receive_task = asyncio.create_task(websocket.receive())
         except WebSocketDisconnect:
             pass
         finally:
+            if not receive_task.done():
+                receive_task.cancel()
+                try:
+                    await receive_task
+                except asyncio.CancelledError:
+                    pass
             try:
                 await websocket.close()
-            except RuntimeError:
+            except (RuntimeError, WebSocketDisconnect):
                 pass
