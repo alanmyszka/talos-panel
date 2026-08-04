@@ -1,4 +1,4 @@
-.PHONY: up down logs test lint migrate
+.PHONY: up down logs test lint migrate dev dev-build dev-logs dev-down
 
 up:
 	docker compose up --build -d
@@ -17,3 +17,15 @@ lint:
 
 migrate:
 	docker compose exec panel alembic upgrade head
+
+dev:
+	docker compose -f compose.yaml -f compose.dev.yaml up -d
+
+dev-build:
+	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+
+dev-logs:
+	docker compose -f compose.yaml -f compose.dev.yaml logs -f panel
+
+dev-down:
+	docker compose -f compose.yaml -f compose.dev.yaml down

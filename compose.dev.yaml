@@ -1,0 +1,12 @@
+services:
+  panel:
+    volumes:
+      - ./talos_panel:/app/talos_panel
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+    command:
+      - /bin/sh
+      - -c
+      - |
+        alembic upgrade head
+        exec uvicorn talos_panel.main:app --host 0.0.0.0 --port 8000 --reload

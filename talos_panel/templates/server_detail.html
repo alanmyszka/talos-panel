@@ -44,7 +44,7 @@
       <div><dt>{{ t("Port") }}</dt><dd id="server-port">{{ server.host_port }}</dd></div>
       <div><dt>{{ t("Memory") }}</dt><dd id="server-memory">{{ server.memory_mb }} MB</dd></div>
       <div><dt>{{ t("Installed version") }}</dt><dd id="installed-version">{% if server.installed_version %}{{ server.server_type.value|title }} {{ server.installed_version }}{% else %}—{% endif %}</dd></div>
-      <div><dt>Java</dt><dd id="installed-java">{{ server.java_version or "—" }}</dd></div>
+      <div><dt>{{ t("Java version") }}</dt><dd id="installed-java">{{ server.java_version or "—" }}</dd></div>
       <div><dt>{{ t("Server ID") }}</dt><dd><code>{{ server.id }}</code></dd></div>
       <div><dt>{{ t("Container") }}</dt><dd><code>{{ container_id[:12] if container_id else t("Not created") }}</code></dd></div>
     </dl>

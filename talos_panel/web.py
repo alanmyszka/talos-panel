@@ -1530,7 +1530,7 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
         settings = get_settings()
         previous = None
         try:
-            while True:
+            while not websocket.app.state.shutting_down.is_set():
                 snapshot = await runtime.snapshot(server)
                 minecraft = None
                 if snapshot.state == "running":
@@ -1564,3 +1564,8 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
                 await asyncio.sleep(2)
         except WebSocketDisconnect:
             pass
+        finally:
+            try:
+                await websocket.close()
+            except RuntimeError:
+                pass

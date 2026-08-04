@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -20,6 +21,7 @@ from talos_panel.web import router as web_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    app.state.shutting_down = asyncio.Event()
     app.state.secret_key = ensure_secret(settings.secret_file)
     app.state.runtime = DockerRuntime(settings)
     app.state.installation_manager = InstallationManager(settings, SessionFactory)
@@ -31,6 +33,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        app.state.shutting_down.set()
+        
         await app.state.operations_manager.stop()
         await app.state.installation_manager.stop()
 

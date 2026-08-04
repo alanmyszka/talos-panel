@@ -172,15 +172,27 @@ class DockerRuntime:
         await asyncio.to_thread(configure)
 
     async def stop(self, server: MinecraftServer) -> tuple[str | None, str]:
-        def stop() -> tuple[str | None, str]:
-            try:
-                container = self._managed_container(server.id)
-            except NotFound:
-                return None, "not_created"
-            container.stop(timeout=30)
+        try:
+            container = await asyncio.to_thread(
+                self._managed_container,
+                server.id,
+            )
+        except NotFound:
+            return None, "not_created"
+
+        await asyncio.to_thread(container.reload)
+
+        if container.status != "running":
             return container.id, "exited"
 
-        return await asyncio.to_thread(stop)
+        await self.send_command(server, "stop")
+
+        try:
+            await asyncio.to_thread(container.wait, timeout=30)
+        except Exception:
+            await asyncio.to_thread(container.stop, timeout=10)
+
+        return container.id, "exited"
 
     async def status(self, server: MinecraftServer) -> tuple[str | None, str]:
         def inspect() -> tuple[str | None, str]:

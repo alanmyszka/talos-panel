@@ -47,7 +47,7 @@ PL = {
     "Port": "Port",
     "Memory": "Pamięć",
     "Installed version": "Zainstalowana wersja",
-    "Java": "Java",
+    "Java version": "Wersja Java",
     "Server ID": "ID serwera",
     "Container": "Kontener",
     "Not created": "Nie utworzono",
