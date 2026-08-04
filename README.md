@@ -7,6 +7,7 @@ Polish interface.
 ## Features
 
 ### Server creation and installation
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/91152dcc-afa2-41b3-82a4-fc8052355eba" />
 
 - create Paper and Vanilla servers from the web interface;
 - select an available Minecraft version;
@@ -17,6 +18,7 @@ Polish interface.
 - automatically select the required Java version.
 
 ### Server management
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/223518aa-c320-4a26-96b3-ae98ec49be01" />
 
 - view all accessible servers from one dashboard;
 - see server status, address, software version, player count, and uptime;
@@ -26,6 +28,7 @@ Polish interface.
 - optionally restart a server after a crash.
 
 ### Live console
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/93529d50-0d16-45d6-b6b1-0c893e6bca84" />
 
 - view live Minecraft server output;
 - send commands directly from the browser;
@@ -33,6 +36,7 @@ Polish interface.
 - inspect recent server messages and errors.
 
 ### Player management
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/1020a006-221a-45cc-8577-8e6b19b2d5e1" />
 
 - view online and known offline players;
 - see player avatars, nicknames, UUIDs, last activity, and play time;
@@ -43,6 +47,7 @@ Polish interface.
 - grant and revoke operator permissions.
 
 ### File manager
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/cbc187fe-40a8-4462-b894-7cae399a2462" />
 
 - browse server files and directories;
 - upload files and complete folders;
@@ -56,6 +61,7 @@ Polish interface.
 - enable and disable Paper plugin JARs.
 
 ### Server settings
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/36f187e7-0e37-4273-bf75-c8bdeb687337" />
 
 - edit MOTD;
 - change game mode and difficulty;
@@ -66,6 +72,7 @@ Polish interface.
 - update JVM startup options.
 
 ### Backups
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/c33b9d20-e37c-49b8-be2e-b9140b1c9278" />
 
 - create manual backups;
 - enable automatic backups;
@@ -75,6 +82,7 @@ Polish interface.
 - view available disk space and backup history.
 
 ### Server updates
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/6c94966b-b4d1-40f0-a8f9-484eab82c48c" />
 
 - check available Paper and Vanilla versions;
 - update a server to a selected version;
@@ -83,6 +91,7 @@ Polish interface.
 - roll back an update.
 
 ### Monitoring
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/3cb66f4e-2833-45a9-9d15-76b097923024" />
 
 - view current CPU and memory usage;
 - see player-count history;
@@ -90,6 +99,9 @@ Polish interface.
 - view historical charts and runtime events.
 
 ### Users and access
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/fe4938f4-7fab-4a18-8cc9-49233b9d1e43" />
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/a12742bd-9bf0-42de-b093-88d23fd07d5f" />
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/00b4d8f2-cae2-408f-90d6-73172af89f0d" />
 
 - create administrator and user accounts;
 - enable or disable account login;
@@ -101,6 +113,8 @@ Polish interface.
 - enable optional two-factor authentication.
 
 ### Administration
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/8555ed87-e4a9-44b6-bac1-5de9b8d80fbc" />
+<img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/ac1ee7a4-4e76-45c1-b16f-107a43c12c51" />
 
 - review panel and server activity in the audit log;
 - filter audit events by action, user, server, IP address, details, and date;
