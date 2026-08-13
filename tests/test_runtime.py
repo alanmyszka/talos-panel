@@ -149,6 +149,58 @@ async def test_itzg_console_pipe_sends_command_without_rcon() -> None:
 
 
 @pytest.mark.asyncio
+async def test_log_stream_follows_once_and_closes() -> None:
+    class Stream:
+        def __init__(self) -> None:
+            self.chunks = iter(
+                [
+                    b"[INFO]: Server started\n",
+                    b"[INFO]: Thread RCON Client /127.0.0.1 started\n",
+                    b"[INFO]: Steve joined the game\n",
+                ]
+            )
+            self.closed = False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            return next(self.chunks)
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Container:
+        def __init__(self, stream) -> None:
+            self.stream = stream
+            self.calls = 0
+
+        def logs(self, **kwargs):
+            self.calls += 1
+            assert kwargs == {
+                "stdout": True,
+                "stderr": True,
+                "tail": 300,
+                "timestamps": False,
+                "stream": True,
+                "follow": True,
+            }
+            return self.stream
+
+    stream = Stream()
+    container = Container(stream)
+    runtime = object.__new__(DockerRuntime)
+    runtime._managed_container = lambda server_id: container
+    server = type("Server", (), {"id": uuid.uuid4()})()
+
+    chunks = [chunk async for chunk in runtime.stream_logs(server)]
+
+    assert chunks == ["[INFO]: Server started", "[INFO]: Steve joined the game"]
+    assert container.calls == 1
+    assert stream.closed is True
+
+
+@pytest.mark.asyncio
 async def test_runtime_snapshot_calculates_container_metrics() -> None:
     class Container:
         id = "container-id"

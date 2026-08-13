@@ -179,11 +179,87 @@ async def record_itzg_version(
     return await record_reported_version(session, server, concrete)
 
 
+async def build_server_summary(
+    runtime: DockerRuntime, server: MinecraftServer
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "server_id": str(server.id),
+        "runtime_state": "error",
+        "installation_state": (
+            server.installation_state.value if server.installation_state else None
+        ),
+        "started_at": None,
+        "minecraft_ready": False,
+        "players_online": None,
+        "players_max": None,
+        "ping_ms": None,
+        "motd": None,
+        "reported_version": None,
+        "installed_version": server.installed_version,
+    }
+    try:
+        snapshot = await runtime.status_snapshot(server)
+    except Exception:
+        return payload
+
+    installed_version = await asyncio.to_thread(
+        installed_version_from_data, runtime.data_path(server.id)
+    )
+    payload.update(
+        {
+            "runtime_state": snapshot.state,
+            "started_at": snapshot.started_at.isoformat() if snapshot.started_at else None,
+            "installed_version": installed_version or server.installed_version,
+        }
+    )
+    if snapshot.state != "running":
+        return payload
+
+    settings = get_settings()
+    try:
+        minecraft = await query_minecraft_status(
+            settings.minecraft_status_host,
+            server.host_port,
+            settings.minecraft_status_timeout_seconds,
+        )
+    except MinecraftStatusError:
+        return payload
+
+    reported_version = concrete_minecraft_version(minecraft.version_name)
+    payload.update(
+        {
+            "minecraft_ready": True,
+            "players_online": minecraft.online,
+            "players_max": minecraft.maximum,
+            "ping_ms": minecraft.latency_ms,
+            "motd": minecraft.motd,
+            "reported_version": minecraft.version_name,
+            "installed_version": reported_version or installed_version or server.installed_version,
+        }
+    )
+    return payload
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, session: AsyncSession = Depends(get_session)):
     servers = await accessible_servers(session, require_user(request))
     cards = [{"server": server, "runtime_state": "loading"} for server in servers]
     return templates.TemplateResponse(request, "index.html", {"cards": cards})
+
+
+@router.get("/servers/summaries")
+async def server_summaries(
+    request: Request, session: AsyncSession = Depends(get_session)
+):
+    servers = await accessible_servers(session, require_user(request))
+    concurrency = asyncio.Semaphore(8)
+
+    async def summarize(server: MinecraftServer) -> dict[str, object]:
+        async with concurrency:
+            return await build_server_summary(request.app.state.runtime, server)
+
+    summaries = await asyncio.gather(*(summarize(server) for server in servers))
+    return JSONResponse({"servers": summaries}, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/servers/{server_id}/summary")
@@ -1621,14 +1697,13 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
                 await asyncio.sleep(2)
 
         async def send_logs() -> None:
-            previous = None
             while True:
-                logs = await runtime.logs(server)
-                if logs != previous:
+                async with send_lock:
+                    await websocket.send_json({"type": "logs_reset"})
+                async for chunk in runtime.stream_logs(server):
                     async with send_lock:
-                        await websocket.send_json({"type": "logs", "logs": logs})
-                    previous = logs
-                await asyncio.sleep(0.25)
+                        await websocket.send_json({"type": "log", "log": chunk})
+                await asyncio.sleep(1)
 
         status_task = asyncio.create_task(send_status())
         logs_task = asyncio.create_task(send_logs())

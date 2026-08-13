@@ -1,5 +1,8 @@
 import asyncio
 import json
+import uuid
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -8,7 +11,7 @@ from talos_panel.minecraft_status import (
     installed_version_from_data,
     query_minecraft_status,
 )
-from talos_panel.web import minecraft_is_ready, player_snapshot
+from talos_panel.web import build_server_summary, minecraft_is_ready, player_snapshot
 
 
 def varint(value: int) -> bytes:
@@ -61,6 +64,55 @@ def test_installed_version_is_read_from_itzg_manifest(tmp_path) -> None:
     )
 
     assert installed_version_from_data(tmp_path) == "1.21.8"
+
+
+@pytest.mark.asyncio
+async def test_server_summary_contains_id_and_offline_runtime_data(tmp_path) -> None:
+    server_id = uuid.uuid4()
+    server = SimpleNamespace(
+        id=server_id,
+        installation_state=SimpleNamespace(value="completed"),
+        installed_version="1.21.8",
+        host_port=25565,
+    )
+    runtime = SimpleNamespace(
+        data_path=lambda _: tmp_path,
+        status_snapshot=lambda _: asyncio.sleep(
+            0,
+            result=SimpleNamespace(
+                state="exited", started_at=datetime(2026, 8, 13, tzinfo=UTC)
+            ),
+        ),
+    )
+
+    summary = await build_server_summary(runtime, server)
+
+    assert summary["server_id"] == str(server_id)
+    assert summary["runtime_state"] == "exited"
+    assert summary["minecraft_ready"] is False
+    assert summary["installed_version"] == "1.21.8"
+    assert summary["started_at"] == "2026-08-13T00:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_server_summary_isolated_runtime_failure(tmp_path) -> None:
+    async def unavailable(_):
+        raise RuntimeError("Docker is unavailable")
+
+    server_id = uuid.uuid4()
+    server = SimpleNamespace(
+        id=server_id,
+        installation_state=SimpleNamespace(value="completed"),
+        installed_version="1.21.8",
+        host_port=25565,
+    )
+    runtime = SimpleNamespace(data_path=lambda _: tmp_path, status_snapshot=unavailable)
+
+    summary = await build_server_summary(runtime, server)
+
+    assert summary["server_id"] == str(server_id)
+    assert summary["runtime_state"] == "error"
+    assert summary["minecraft_ready"] is False
 
 
 @pytest.mark.asyncio

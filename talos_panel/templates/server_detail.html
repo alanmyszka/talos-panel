@@ -1081,9 +1081,20 @@ function renderSocketState(data) {
 }
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
-  if (message.type === 'logs') {
-    if (message.logs !== serverConsoleLogs) localConsoleEntries.length = 0;
-    serverConsoleLogs = message.logs;
+  if (message.type === 'logs_reset') {
+    serverConsoleLogs = '';
+    localConsoleEntries.length = 0;
+    if (!document.querySelector('[data-tab-panel="console"]').classList.contains('hidden')) {
+      renderConsoleOutput(latestConsoleData);
+    }
+    return;
+  }
+  if (message.type === 'log') {
+    const lines = serverConsoleLogs ? serverConsoleLogs.split('\n') : [];
+    lines.push(...message.log.replace(/\r\n?/g, '\n').split('\n'));
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+    serverConsoleLogs = lines.slice(-300).join('\n');
+    localConsoleEntries.length = 0;
     if (!document.querySelector('[data-tab-panel="console"]').classList.contains('hidden')) {
       renderConsoleOutput(latestConsoleData);
     }

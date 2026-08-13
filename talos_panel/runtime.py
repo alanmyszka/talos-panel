@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import re
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +33,11 @@ class RuntimeSnapshot:
 
 SUPPORTED_JAVA_VERSIONS = {8, 11, 17, 21, 25}
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+LOG_STREAM_END = object()
+
+
+def _next_log_chunk(stream):
+    return next(stream, LOG_STREAM_END)
 
 
 def normalize_console_command(command: str) -> str:
@@ -313,6 +319,46 @@ class DockerRuntime:
             return clean_console_logs(output.decode("utf-8", errors="replace"))
 
         return await asyncio.to_thread(read)
+
+    async def stream_logs(
+        self, server: MinecraftServer, tail: int = 300
+    ) -> AsyncIterator[str]:
+        def open_stream():
+            try:
+                container = self._managed_container(server.id)
+            except NotFound:
+                return None
+            return container.logs(
+                stdout=True,
+                stderr=True,
+                tail=tail,
+                timestamps=False,
+                stream=True,
+                follow=True,
+            )
+
+        stream = await asyncio.to_thread(open_stream)
+        if stream is None:
+            return
+        try:
+            while True:
+                try:
+                    chunk = await asyncio.to_thread(_next_log_chunk, stream)
+                except Exception:
+                    return
+                if chunk is LOG_STREAM_END:
+                    return
+                if isinstance(chunk, bytes):
+                    text = chunk.decode("utf-8", errors="replace")
+                else:
+                    text = str(chunk)
+                cleaned = clean_console_logs(text)
+                if cleaned:
+                    yield cleaned
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                await asyncio.to_thread(close)
 
     async def send_command(self, server: MinecraftServer, command: str) -> str:
         normalized = normalize_console_command(command)
