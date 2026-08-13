@@ -1,6 +1,8 @@
 import hashlib
 import hmac
+import json
 import secrets
+import string
 from datetime import UTC, datetime, timedelta
 
 from argon2 import PasswordHasher
@@ -15,6 +17,9 @@ from talos_panel.models import AuditEvent, MinecraftServer, User, UserRole, User
 
 password_hasher = PasswordHasher()
 DUMMY_HASH = password_hasher.hash("talos-panel-dummy-password")
+RECOVERY_CODE_COUNT = 10
+RECOVERY_CODE_LENGTH = 16
+RECOVERY_CODE_ALPHABET = string.ascii_uppercase + string.digits
 
 
 def hash_password(password: str) -> str:
@@ -32,6 +37,43 @@ def verify_password(password_hash: str, password: str) -> bool:
 
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def normalize_recovery_code(code: str) -> str:
+    return "".join(character for character in code.upper() if character.isalnum())
+
+
+def recovery_code_hash(code: str) -> str:
+    return hashlib.sha256(normalize_recovery_code(code).encode()).hexdigest()
+
+
+def generate_recovery_codes() -> tuple[list[str], str]:
+    raw_codes = [
+        "-".join(
+            "".join(secrets.choice(RECOVERY_CODE_ALPHABET) for _ in range(4))
+            for _ in range(RECOVERY_CODE_LENGTH // 4)
+        )
+        for _ in range(RECOVERY_CODE_COUNT)
+    ]
+    return raw_codes, json.dumps([recovery_code_hash(code) for code in raw_codes])
+
+
+def consume_recovery_code(stored_hashes: str | None, supplied: str) -> tuple[bool, str | None]:
+    normalized = normalize_recovery_code(supplied)
+    if len(normalized) != RECOVERY_CODE_LENGTH or not stored_hashes:
+        return False, stored_hashes
+    try:
+        hashes = json.loads(stored_hashes)
+    except (TypeError, ValueError):
+        return False, stored_hashes
+    if not isinstance(hashes, list) or not all(isinstance(value, str) for value in hashes):
+        return False, stored_hashes
+    supplied_hash = recovery_code_hash(normalized)
+    for index, stored_hash in enumerate(hashes):
+        if hmac.compare_digest(stored_hash, supplied_hash):
+            del hashes[index]
+            return True, json.dumps(hashes)
+    return False, stored_hashes
 
 
 def client_ip(connection: Request | WebSocket) -> str | None:

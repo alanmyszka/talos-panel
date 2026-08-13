@@ -1,9 +1,13 @@
 import asyncio
+import base64
+import io
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from urllib.parse import urlencode
 
 import pyotp
+import qrcode
+import qrcode.image.svg
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -12,7 +16,9 @@ from sqlalchemy import delete, func, select, text
 from talos_panel.auth import (
     DUMMY_HASH,
     client_ip,
+    consume_recovery_code,
     create_session,
+    generate_recovery_codes,
     hash_password,
     record_audit,
     require_admin,
@@ -48,6 +54,56 @@ def normalized_email(email: str) -> str:
     if not value or len(value) > 320 or "@" not in value:
         raise HTTPException(status_code=422, detail="Enter a valid email address")
     return value
+
+
+def totp_qr_data_uri(provisioning_uri: str) -> str:
+    output = io.BytesIO()
+    image = qrcode.make(provisioning_uri, image_factory=qrcode.image.svg.SvgPathImage)
+    image.save(output)
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def verify_second_factor(user: User, supplied: str) -> str | None:
+    value = supplied.strip()
+    if user.totp_secret and pyotp.TOTP(user.totp_secret).verify(value, valid_window=1):
+        return "totp"
+    accepted, remaining = consume_recovery_code(user.totp_recovery_codes, value)
+    if accepted:
+        user.totp_recovery_codes = remaining
+        return "recovery"
+    return None
+
+
+async def account_context(
+    request: Request, database, recovery_codes: list[str] | None = None
+) -> dict:
+    user = require_user(request)
+    stored = await database.get(User, user.id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not stored.totp_secret:
+        stored.totp_secret = pyotp.random_base32()
+        await database.commit()
+    sessions = list(
+        await database.scalars(
+            select(UserSession)
+            .where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None))
+            .order_by(UserSession.last_seen_at.desc())
+        )
+    )
+    provisioning_uri = pyotp.TOTP(stored.totp_secret).provisioning_uri(
+        name=stored.email, issuer_name="Talos Panel"
+    )
+    return {
+        "message": None,
+        "sessions": sessions,
+        "totp_enabled": stored.totp_enabled,
+        "totp_secret": stored.totp_secret,
+        "totp_uri": provisioning_uri,
+        "totp_qr": totp_qr_data_uri(provisioning_uri),
+        "recovery_codes": recovery_codes,
+    }
 
 
 @router.get("/setup", response_class=HTMLResponse)
@@ -96,7 +152,7 @@ async def login(
     request: Request,
     email: str = Form(),
     password: str = Form(),
-    totp_code: str = Form("", max_length=8),
+    totp_code: str = Form("", max_length=32),
 ):
     require_same_origin(request)
     async with SessionFactory() as database:
@@ -111,16 +167,12 @@ async def login(
             raise HTTPException(status_code=429, detail="Too many login attempts; try again later")
         user = await database.scalar(select(User).where(User.email == email.strip().lower()))
         valid = verify_password(user.password_hash if user else DUMMY_HASH, password)
-        totp_valid = bool(
-            user
-            and (
-                not user.totp_enabled
-                or (
-                    user.totp_secret
-                    and pyotp.TOTP(user.totp_secret).verify(totp_code.strip(), valid_window=1)
-                )
-            )
+        second_factor = (
+            verify_second_factor(user, totp_code)
+            if user and user.totp_enabled and valid and user.is_active
+            else None
         )
+        totp_valid = bool(user and (not user.totp_enabled or second_factor))
         if not user or not valid or not user.is_active or not totp_valid:
             database.add(
                 AuditEvent(action="auth.login_failed", ip_address=client_ip(request), details=email[:320])
@@ -132,6 +184,15 @@ async def login(
                 {"error": ui_message(request, "Invalid email or password")},
                 status_code=401,
             )
+        if second_factor == "recovery":
+            database.add(
+                AuditEvent(
+                    user_id=user.id,
+                    action="auth.recovery_code_used",
+                    ip_address=client_ip(request),
+                )
+            )
+            await database.commit()
     raw_token, _ = await create_session(request, user, get_settings())
     response = RedirectResponse("/", status_code=303)
     set_session_cookie(response, raw_token, get_settings())
@@ -155,44 +216,17 @@ async def logout(request: Request, csrf_token: str = Form()):
 
 @router.get("/account", response_class=HTMLResponse)
 async def account_page(request: Request):
-    user = require_user(request)
     async with SessionFactory() as database:
-        stored = await database.get(User, user.id)
-        if stored is None:
-            raise HTTPException(status_code=404, detail="User not found")
-        if not stored.totp_secret:
-            stored.totp_secret = pyotp.random_base32()
-            await database.commit()
-        sessions = list(
-            await database.scalars(
-                select(UserSession)
-                .where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None))
-                .order_by(UserSession.last_seen_at.desc())
-            )
-        )
-        provisioning_uri = pyotp.TOTP(stored.totp_secret).provisioning_uri(
-            name=stored.email, issuer_name="Talos Panel"
-        )
-        enabled = stored.totp_enabled
-        secret = stored.totp_secret
-    return templates.TemplateResponse(
-        request,
-        "account.html",
-        {
-            "message": None,
-            "sessions": sessions,
-            "totp_enabled": enabled,
-            "totp_secret": secret,
-            "totp_uri": provisioning_uri,
-        },
-    )
+        context = await account_context(request, database)
+    return templates.TemplateResponse(request, "account.html", context)
 
 
 @router.post("/account/2fa")
 async def update_two_factor(
     request: Request,
-    action: str = Form(pattern=r"^(enable|disable)$"),
-    totp_code: str = Form(min_length=6, max_length=8),
+    action: str = Form(pattern=r"^(enable|disable|regenerate)$"),
+    totp_code: str = Form(min_length=6, max_length=32),
+    current_password: str = Form(min_length=1, max_length=256),
     csrf_token: str = Form(),
 ):
     user = require_user(request)
@@ -201,13 +235,36 @@ async def update_two_factor(
         stored = await database.get(User, user.id)
         if stored is None or not stored.totp_secret:
             raise HTTPException(status_code=409, detail="Two-factor setup is not ready")
-        if not pyotp.TOTP(stored.totp_secret).verify(totp_code.strip(), valid_window=1):
+        if not verify_password(stored.password_hash, current_password):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        if not verify_second_factor(stored, totp_code):
             raise HTTPException(status_code=422, detail="Invalid authentication code")
-        stored.totp_enabled = action == "enable"
+        recovery_codes = None
+        if action in {"enable", "regenerate"}:
+            recovery_codes, stored.totp_recovery_codes = generate_recovery_codes()
+            stored.totp_enabled = True
         if action == "disable":
+            stored.totp_enabled = False
             stored.totp_secret = pyotp.random_base32()
+            stored.totp_recovery_codes = None
+        if action == "enable":
+            sessions = list(
+                await database.scalars(
+                    select(UserSession).where(
+                        UserSession.user_id == user.id,
+                        UserSession.id != request.state.auth_session.id,
+                        UserSession.revoked_at.is_(None),
+                    )
+                )
+            )
+            now = datetime.now(UTC)
+            for session in sessions:
+                session.revoked_at = now
         await database.commit()
+        context = await account_context(request, database, recovery_codes)
     await record_audit(request, f"auth.2fa_{action}")
+    if recovery_codes:
+        return templates.TemplateResponse(request, "account.html", context)
     return RedirectResponse("/account", status_code=303)
 
 
@@ -518,6 +575,45 @@ async def revoke_user_sessions(
         await database.commit()
     await record_audit(request, "user.sessions_revoke", details=str(user_id))
     return RedirectResponse("/admin/users?message=Sessions+revoked", status_code=303)
+
+
+@router.post("/admin/users/{user_id}/2fa/reset")
+async def reset_user_two_factor(
+    request: Request,
+    user_id: uuid.UUID,
+    current_password: str = Form(min_length=1, max_length=256),
+    csrf_token: str = Form(),
+):
+    current_user = require_admin(request)
+    require_csrf(request, csrf_token)
+    if user_id == current_user.id:
+        raise HTTPException(status_code=409, detail="Use your account settings to disable 2FA")
+    async with SessionFactory() as database:
+        administrator = await database.get(User, current_user.id)
+        if administrator is None or not verify_password(
+            administrator.password_hash, current_password
+        ):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        target = await database.get(User, user_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        target.totp_enabled = False
+        target.totp_secret = pyotp.random_base32()
+        target.totp_recovery_codes = None
+        sessions = list(
+            await database.scalars(
+                select(UserSession).where(
+                    UserSession.user_id == user_id,
+                    UserSession.revoked_at.is_(None),
+                )
+            )
+        )
+        now = datetime.now(UTC)
+        for session in sessions:
+            session.revoked_at = now
+        await database.commit()
+    await record_audit(request, "user.2fa_reset", details=str(user_id))
+    return RedirectResponse("/admin/users?message=Two-factor+authentication+reset", status_code=303)
 
 
 @router.post("/admin/users/{user_id}/status")

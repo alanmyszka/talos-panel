@@ -73,6 +73,7 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_recovery_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
     memberships: Mapped[list["ServerMember"]] = relationship(back_populates="user")
     sessions: Mapped[list["UserSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

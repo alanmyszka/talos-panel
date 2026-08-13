@@ -1468,6 +1468,63 @@ code,
   border-radius: var(--radius-sm);
 }
 
+.totp-qr {
+  width: 220px;
+  max-width: 100%;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: white;
+}
+
+.recovery-codes > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 18px;
+  margin-top: 12px;
+}
+
+.recovery-codes code {
+  user-select: all;
+}
+
+.inline-admin-action {
+  position: relative;
+}
+
+.inline-admin-action > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.inline-admin-action > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inline-admin-action form {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 260px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  box-shadow: var(--shadow);
+}
+
+.inline-admin-action label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 600px) {
+  .recovery-codes > div {
+    grid-template-columns: 1fr;
+  }
+}
+
 .session-list article,
 .security-findings article {
   display: flex;
