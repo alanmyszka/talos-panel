@@ -165,6 +165,7 @@ POSTGRES_USER=talos_panel
 POSTGRES_PASSWORD=replace-with-a-strong-password
 BASE_DIR=/home/your-user/talos-panel
 SECURE_COOKIES=false
+PANEL_PORT=8000
 ```
 
 Build and start the application:
