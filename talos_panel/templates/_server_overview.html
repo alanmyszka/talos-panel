@@ -1,0 +1,30 @@
+<div id="tab-overview" class="tab-panel" data-tab-panel="overview" role="tabpanel">
+<section class="server-layout{% if server.installation_state and server.installation_state.value == 'completed' %} single{% endif %}">
+  <div class="card overview">
+    {% set display_runtime_state = "loading" if runtime_state == "running" else runtime_state %}
+    <div class="overview-title"><h2>{{ t("Server details") }}</h2><span id="runtime-badge" class="status state-{{ display_runtime_state }}">{{ t(display_runtime_state|replace("_", " ")) }}</span></div>
+    <dl class="details">
+      <div><dt>{{ t("Address") }}</dt><dd><code id="server-address">localhost:{{ server.host_port }}</code><button class="copy mini-button" type="button" data-copy="localhost:{{ server.host_port }}">{{ t("Copy") }}</button></dd></div>
+      <div><dt>{{ t("Port") }}</dt><dd id="server-port">{{ server.host_port }}</dd></div>
+      <div><dt>{{ t("Memory") }}</dt><dd id="server-memory">{{ server.memory_mb }} MB</dd></div>
+      <div><dt>{{ t("Installed version") }}</dt><dd id="installed-version">{% if server.installed_version %}{{ server.server_type.value|title }} {{ server.installed_version }}{% else %}—{% endif %}</dd></div>
+      <div><dt>{{ t("Java version") }}</dt><dd id="installed-java">{{ server.java_version or "—" }}</dd></div>
+      <div><dt>{{ t("Server ID") }}</dt><dd><code>{{ server.id }}</code></dd></div>
+      <div><dt>{{ t("Container") }}</dt><dd><code>{{ container_id[:12] if container_id else t("Not created") }}</code></dd></div>
+    </dl>
+  </div>
+  {% if not server.installation_state or server.installation_state.value != "completed" %}{% include "installation.html" %}{% endif %}
+</section>
+
+<section class="metric-grid" aria-label="Live server metrics">
+  <div class="card metric"><span>{{ t("CPU") }}</span><strong id="cpu-value">—</strong><small>{{ t("Container usage") }}</small></div>
+  <div class="card metric"><span>{{ t("Memory") }}</span><strong id="memory-value">—</strong><small id="memory-detail">{{ server.memory_mb }} MB</small></div>
+  <div class="card metric"><span>{{ t("Uptime") }}</span><strong id="uptime-value">—</strong><small>{{ t("Since last start") }}</small></div>
+  <div class="card metric"><span>{{ t("Players") }}</span><strong id="players-value">—</strong><small id="players-detail">{{ t("Waiting for server") }}</small></div>
+</section>
+
+<section class="card players-card">
+  <div class="overview-title"><h2>{{ t("Players online") }}</h2><span id="players-badge" class="status">—</span></div>
+  <div id="players-list" class="player-list"><span class="hint">{{ t("Player data becomes available when Minecraft is ready.") }}</span></div>
+</section>
+</div>

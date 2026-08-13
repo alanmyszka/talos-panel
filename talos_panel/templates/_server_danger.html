@@ -1,0 +1,12 @@
+<div id="tab-danger" class="tab-panel hidden" data-tab-panel="danger" role="tabpanel">
+<section class="card danger-zone">
+  <h2>{{ t("Delete server") }}</h2>
+  <p>{{ t("This removes the server from Talos Panel and its Docker container. Game files are moved to the local Talos trash for manual recovery.") }}</p>
+  <form class="delete-form" method="post" action="/servers/{{ server.id }}/delete" data-server-name="{{ server.name }}">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label>{{ t("Type") }} <strong>{{ server.name }}</strong> {{ t("to confirm") }}<input name="confirmation" maxlength="80" autocomplete="off" required></label>
+    <button class="danger" type="submit" disabled>{{ t("Delete server") }}</button>
+  </form>
+</section>
+<dialog id="server-delete-dialog" class="confirm-dialog"><form method="dialog"><div><h2>{{ t("Delete this server?") }}</h2><p><strong>{{ server.name }}</strong></p><p class="hint">{{ t("The server will be removed and its game files moved to the Talos trash.") }}</p></div><div class="dialog-actions"><button value="cancel" class="secondary" type="submit">{{ t("Cancel") }}</button><button value="confirm" class="danger" type="submit">{{ t("Delete server") }}</button></div></form></dialog>
+</div>

@@ -1,0 +1,25 @@
+<div id="tab-settings" class="tab-panel hidden" data-tab-panel="settings" role="tabpanel">
+<section class="card settings-card">
+  <div class="overview-title">
+    <div><h2>{{ t("Server settings") }}</h2><p>{{ t("Compatible changes are applied immediately; remaining changes take effect after restart.") }}</p></div>
+  </div>
+  {% if settings_error %}<p class="error">{{ settings_error }}</p>{% endif %}
+  <form class="settings-form" method="post" action="/servers/{{ server.id }}/settings">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label class="wide">MOTD<input name="motd" minlength="1" maxlength="100" value="{{ properties.motd }}" required></label>
+    <label>{{ t("Game mode") }}<select name="gamemode">{% for value in ["survival", "creative", "adventure", "spectator"] %}<option value="{{ value }}"{% if properties.gamemode == value %} selected{% endif %}>{{ value|title }}</option>{% endfor %}</select></label>
+    <label>{{ t("Difficulty") }}<select name="difficulty">{% for value in ["peaceful", "easy", "normal", "hard"] %}<option value="{{ value }}"{% if properties.difficulty == value %} selected{% endif %}>{{ value|title }}</option>{% endfor %}</select></label>
+    <label>{{ t("Maximum players") }}<input type="number" name="max_players" min="1" max="1000" value="{{ properties.max_players }}" required></label>
+    <label>{{ t("Memory") }} (MB)<input type="number" name="memory_mb" min="1024" max="32768" step="256" value="{{ server.memory_mb }}" required></label>
+    <label>{{ t("Host port") }}<input type="number" name="host_port" min="1024" max="65535" value="{{ server.host_port }}" required></label>
+    <label>{{ t("View distance") }}<input type="number" name="view_distance" min="2" max="32" value="{{ properties.view_distance }}" required></label>
+    <label>{{ t("Simulation distance") }}<input type="number" name="simulation_distance" min="2" max="32" value="{{ properties.simulation_distance }}" required></label>
+    <div class="settings-checks wide">
+      <label><input type="checkbox" name="whitelist" value="true"{% if properties.whitelist %} checked{% endif %}> {{ t("Whitelist") }}</label>
+      <label><input type="checkbox" name="pvp" value="true"{% if properties.pvp %} checked{% endif %}> PvP</label>
+      <label><input type="checkbox" name="allow_flight" value="true"{% if properties.allow_flight %} checked{% endif %}> {{ t("Allow flight") }}</label>
+    </div>
+    <div class="wide"><button type="submit">{{ t("Save settings") }}</button><span class="settings-state hint" aria-live="polite"></span></div>
+  </form>
+</section>
+</div>

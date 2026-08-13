@@ -1,0 +1,22 @@
+<div id="tab-files" class="tab-panel hidden" data-tab-panel="files" role="tabpanel">
+<section class="card files-card">
+  <div class="overview-title"><div><h2>{{ t("File manager") }}</h2><p>{{ t("Drag and drop files or folders onto the file list to upload them.") }}</p></div></div>
+  {% if can_manage %}
+  <div class="file-actions">
+    <form id="file-upload-form" class="browser-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="uploads" multiple required><span class="file-picker-button">{{ t("Browse") }}</span><span class="file-picker-name">{{ t("No file selected") }}</span></label><button type="submit">{{ t("Upload files") }}</button></form>
+    <form id="folder-upload-form" class="browser-upload-form" action="/servers/{{ server.id }}/files/upload" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><label class="file-picker"><input type="file" name="uploads" webkitdirectory multiple required><span class="file-picker-button">{{ t("Browse folder") }}</span><span class="file-picker-name">{{ t("No folder selected") }}</span></label><button type="submit">{{ t("Upload folder") }}</button></form>
+    <form id="mkdir-form" action="/servers/{{ server.id }}/files/mkdir"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input class="file-parent" type="hidden" name="parent"><input name="name" maxlength="255" placeholder="{{ t('New directory') }}" required><button type="submit" class="secondary">{{ t("Create directory") }}</button></form>
+  </div>
+  <div id="upload-progress" class="upload-progress hidden" aria-live="polite"><div><span>{{ t("Uploading…") }}</span><strong>0%</strong></div><progress max="100" value="0"></progress></div>
+  {% endif %}
+  <div id="files-error" class="error hidden"></div>
+  <div class="file-toolbar">
+    <button id="files-up" class="secondary" type="button">← {{ t("Up") }}</button>
+    <code id="files-path">/</code>
+  </div>
+  <div class="file-table-wrap"><div id="file-drop-overlay" class="file-drop-overlay hidden"><strong>{{ t("Drop files or folders here") }}</strong><span>{{ t("They will be uploaded to the current directory") }}</span></div><table class="file-table"><thead><tr><th>{{ t("Name") }}</th><th>{{ t("Size") }}</th><th>{{ t("Actions") }}</th></tr></thead><tbody id="files-body"><tr><td colspan="3">{{ t("Loading…") }}</td></tr></tbody></table></div>
+</section>
+{% if can_manage %}<dialog id="text-editor-dialog" class="text-editor-dialog"><form id="text-editor" class="text-editor" action="/servers/{{ server.id }}/files/text"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><input id="editor-path" type="hidden" name="path"><div class="overview-title"><div><h3 id="editor-title">{{ t("Edit file") }}</h3><code class="editor-file-path"></code></div><button id="editor-close" class="secondary" type="button">{{ t("Close") }}</button></div><textarea name="content" spellcheck="false"></textarea><div class="editor-footer"><button type="submit">{{ t("Save file") }}</button><span class="editor-state hint" aria-live="polite"></span></div></form></dialog>{% endif %}
+{% if can_manage %}<dialog id="file-delete-dialog" class="confirm-dialog"><form method="dialog"><div><h2>{{ t("Delete item") }}</h2><p class="file-delete-message"></p><p class="hint">{{ t("The item will be moved to the Talos trash.") }}</p></div><div class="dialog-actions"><button value="cancel" class="secondary" type="submit">{{ t("Cancel") }}</button><button id="file-delete-confirm" value="confirm" class="danger" type="submit">{{ t("Delete") }}</button></div></form></dialog>{% endif %}
+{% if can_manage %}<dialog id="file-organize-dialog" class="confirm-dialog file-organize-dialog"><form method="dialog"><div><h2></h2><p class="file-organize-source hint"></p><label class="file-destination-label">{{ t("Destination directory") }}<input name="destination_parent" autocomplete="off" placeholder="/"></label><label>{{ t("Name") }}<input name="name" maxlength="255" required autocomplete="off"></label></div><div class="dialog-actions"><button value="cancel" class="secondary" type="submit">{{ t("Cancel") }}</button><button value="confirm" type="submit">{{ t("Apply") }}</button></div></form></dialog>{% endif %}
+</div>

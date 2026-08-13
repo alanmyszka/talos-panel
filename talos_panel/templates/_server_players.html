@@ -1,0 +1,8 @@
+<div id="tab-players" class="tab-panel hidden" data-tab-panel="players" role="tabpanel">
+<section class="card player-management-card">
+  <div class="overview-title"><div><h2>{{ t("Player management") }}</h2><p>{{ t("Review known players and perform common administrative actions.") }}</p></div><button id="players-refresh" class="secondary" type="button">{{ t("Refresh") }}</button></div>
+  <div id="players-management-note" class="player-management-note hint">{{ t("Loading player profiles…") }}</div>
+  <div class="player-table-wrap"><table class="player-table"><thead><tr><th>{{ t("Player") }}</th><th>UUID</th><th>{{ t("Last active") }}</th><th>{{ t("Play time") }}</th><th>{{ t("Permissions") }}</th><th>{{ t("Actions") }}</th></tr></thead><tbody id="player-table-body"><tr><td colspan="6">{{ t("Loading…") }}</td></tr></tbody></table></div>
+</section>
+<dialog id="player-profile-dialog" class="player-profile-dialog"><button class="dialog-close" type="button" aria-label="{{ t('Close') }}">×</button><div class="profile-head"><span class="player-avatar profile-avatar"></span><div><h2></h2><code class="profile-uuid"></code></div></div><dl class="details"><div><dt>{{ t("Status") }}</dt><dd class="profile-status"></dd></div><div><dt>{{ t("Last active") }}</dt><dd class="profile-active"></dd></div><div><dt>{{ t("Play time") }}</dt><dd class="profile-playtime"></dd></div><div><dt>{{ t("Permissions") }}</dt><dd class="profile-permissions"></dd></div></dl></dialog>
+</div>

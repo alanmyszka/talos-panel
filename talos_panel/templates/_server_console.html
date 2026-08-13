@@ -1,0 +1,11 @@
+<div id="tab-console" class="tab-panel hidden" data-tab-panel="console" role="tabpanel">
+<section class="card console-card">
+  <div class="overview-title"><div><h2>{{ t("Console") }}</h2></div><span id="ready-badge" class="status">{{ t("Not ready") }}</span></div>
+  <pre id="console-output" aria-live="polite">{{ t("Waiting for server output…") }}</pre>
+  <form class="command-form" method="post" action="/servers/{{ server.id }}/command">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <span>&gt;</span><input name="command" maxlength="256" autocomplete="off" placeholder="say Hello from Talos Panel" disabled>
+    <button type="submit" disabled>{{ t("Send") }}</button>
+  </form>
+</section>
+</div>
