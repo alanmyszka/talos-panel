@@ -4,6 +4,7 @@ import pytest
 from talos_panel.installer import (
     RELEASE_VERSION,
     ArtifactResolver,
+    InstallationError,
     java_version_for,
     vanilla_server_artifact_available,
 )
@@ -14,7 +15,8 @@ def test_java_version_is_selected_from_game_version() -> None:
     assert java_version_for("1.19.4") == 17
     assert java_version_for("1.21.11") == 21
     assert java_version_for("26.1") == 25
-    assert java_version_for("LATEST") == 25
+    with pytest.raises(InstallationError):
+        java_version_for("LATEST")
 
 
 def test_release_filter_rejects_prereleases() -> None:
@@ -57,7 +59,7 @@ async def test_itzg_types_use_minecraft_release_list(server_type: ServerType) ->
     async with httpx.AsyncClient(transport=transport) as client:
         versions = await ArtifactResolver(client).versions(server_type)
 
-    assert versions == ["LATEST", "1.21.11", "1.2.5"]
+    assert versions == ["1.21.11", "1.2.5"]
 
 
 @pytest.mark.asyncio
@@ -67,4 +69,4 @@ async def test_paper_uses_paper_version_catalog() -> None:
     async with httpx.AsyncClient(transport=transport) as client:
         versions = await ArtifactResolver(client).versions(ServerType.PAPER)
 
-    assert versions == ["LATEST", "1.21.11"]
+    assert versions == ["1.21.11"]

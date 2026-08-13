@@ -3,12 +3,14 @@ import json
 import re
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 MAX_PACKET_BYTES = 2 * 1024 * 1024
 MAX_STRING_BYTES = 32767 * 4
 MINECRAFT_VERSION = re.compile(r"\b(?:\d+\.)+\d+\b")
+ITZG_VERSION_LINE = re.compile(r'^VERSION=["\']?([^"\'\r\n]+)')
 
 
 class MinecraftStatusError(Exception):
@@ -20,6 +22,39 @@ def concrete_minecraft_version(version_name: str | None) -> str | None:
         return None
     match = MINECRAFT_VERSION.search(version_name)
     return match.group(0) if match else None
+
+
+def installed_version_from_data(data_path: Path) -> str | None:
+    """Read the concrete Minecraft version recorded by the ITZG image."""
+    try:
+        env_files = sorted(data_path.glob(".*.env"))
+    except OSError:
+        return None
+    for path in env_files:
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                match = ITZG_VERSION_LINE.match(line.strip())
+                if match:
+                    version = concrete_minecraft_version(match.group(1))
+                    if version:
+                        return version
+        except OSError:
+            continue
+
+    try:
+        manifests = sorted(data_path.glob(".*manifest.json"))
+    except OSError:
+        manifests = []
+    for path in manifests:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        for key in ("minecraftVersion", "version"):
+            version = concrete_minecraft_version(str(payload.get(key, "")))
+            if version:
+                return version
+    return None
 
 
 @dataclass(frozen=True)

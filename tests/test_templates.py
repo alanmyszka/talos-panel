@@ -152,6 +152,7 @@ def test_dashboard_uses_sidebar_and_server_rows() -> None:
     base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
     index = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
     assert 'class="app-sidebar"' in base
+    assert base.index("/static/auth.css") < base.index("/static/async.css")
     assert "<header>" not in base
     assert 'class="server-list"' in index
     assert 'class="server-row"' in index
@@ -323,11 +324,21 @@ def test_file_manager_uses_general_file_and_folder_uploads() -> None:
 
 
 def test_server_heading_avoids_duplicate_metadata_and_version_includes_software() -> None:
+    dashboard = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
     detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    assert "server.installed_version or server.game_version" not in dashboard
     assert "{{ server.game_version }} · localhost:{{ server.host_port }}" not in detail
     assert "{{ server.server_type.value|title }} {{ server.installed_version }}" in detail
     assert "const serverSoftware" in detail
     assert "`${serverSoftware} ${data.installed_version}`" in detail
+
+
+def test_deleted_server_audit_uses_snapshot_reference_without_live_foreign_key() -> None:
+    web = Path("talos_panel/web.py").read_text(encoding="utf-8")
+    route_start = web.index("async def delete_server_ui(")
+    route = web[route_start : web.index("@router.get", route_start)]
+    assert "server_reference_id=server.id" in route
+    assert "server_id=server.id" not in route
 
 
 def test_console_header_and_server_details_avoid_redundant_labels_and_rules() -> None:

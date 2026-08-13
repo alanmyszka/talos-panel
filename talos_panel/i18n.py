@@ -283,6 +283,8 @@ PL = {
     "Time": "Czas",
     "System or deleted user": "System lub usunięty użytkownik",
     "Deleted server": "Usunięty serwer",
+    "Open navigation": "Otwórz nawigację",
+    "Close navigation": "Zamknij nawigację",
     "No events match these filters.": "Żadne zdarzenia nie pasują do filtrów.",
     "Showing": "Wyświetlanie",
     "of": "z",

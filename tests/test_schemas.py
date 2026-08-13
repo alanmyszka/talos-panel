@@ -18,6 +18,17 @@ def test_server_create_rejects_unbounded_memory() -> None:
         )
 
 
+def test_server_create_requires_a_concrete_game_version() -> None:
+    with pytest.raises(ValidationError):
+        ServerCreate(
+            name="Survival",
+            server_type="paper",
+            game_version="LATEST",
+            memory_mb=4096,
+            host_port=25565,
+        )
+
+
 def test_server_create_rejects_jvm_entrypoint_overrides() -> None:
     with pytest.raises(ValidationError):
         ServerCreate(

@@ -3,7 +3,11 @@ import json
 
 import pytest
 
-from talos_panel.minecraft_status import concrete_minecraft_version, query_minecraft_status
+from talos_panel.minecraft_status import (
+    concrete_minecraft_version,
+    installed_version_from_data,
+    query_minecraft_status,
+)
 
 
 def varint(value: int) -> bytes:
@@ -20,6 +24,24 @@ def test_concrete_version_is_extracted_from_server_status() -> None:
     assert concrete_minecraft_version("Paper 26.2") == "26.2"
     assert concrete_minecraft_version("Paper 1.21.8") == "1.21.8"
     assert concrete_minecraft_version(None) is None
+
+
+def test_installed_version_is_read_from_itzg_environment(tmp_path) -> None:
+    (tmp_path / ".paper.env").write_text(
+        'SERVER="/data/paper-26.2-112.jar"\nVERSION="26.2"\nTYPE="PAPER"\n',
+        encoding="utf-8",
+    )
+
+    assert installed_version_from_data(tmp_path) == "26.2"
+
+
+def test_installed_version_is_read_from_itzg_manifest(tmp_path) -> None:
+    (tmp_path / ".papermc-manifest.json").write_text(
+        json.dumps({"minecraftVersion": "1.21.8", "build": 42}),
+        encoding="utf-8",
+    )
+
+    assert installed_version_from_data(tmp_path) == "1.21.8"
 
 
 @pytest.mark.asyncio

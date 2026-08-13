@@ -4,20 +4,20 @@
 <div id="action-notice" class="hidden" data-initial-message="{{ t(message) if message else '' }}"></div>
 
 <div class="server-shell"><aside class="server-sidebar">
-  <a class="app-brand" href="/"><strong>Talos Panel</strong></a>
+  <div class="sidebar-brand-row"><a class="app-brand" href="/"><span class="brand-symbol material-symbols-rounded">deployed_code</span><strong>Talos Panel</strong></a><button class="sidebar-close icon-button" type="button" aria-label="{{ t('Close navigation') }}"><span class="material-symbols-rounded">close</span></button></div>
   <div class="server-navigation">
-  <a class="server-home-link" href="/"><span></span>{{ t("Home") }}</a>
+  <a class="server-home-link" href="/"><span class="material-symbols-rounded">dns</span>{{ t("Servers") }}</a>
 <nav class="server-tabs" role="tablist" aria-label="Server sections">
-  <button type="button" role="tab" data-tab="overview" aria-controls="tab-overview" aria-selected="true"><span></span>{{ t("Dashboard") }}</button>
-  <button type="button" role="tab" data-tab="console" aria-controls="tab-console" aria-selected="false"><span></span>{{ t("Console") }}</button>
-  <button type="button" role="tab" data-tab="players" aria-controls="tab-players" aria-selected="false"><span></span>{{ t("Players") }}</button>
-  <button type="button" role="tab" data-tab="files" aria-controls="tab-files" aria-selected="false"><span></span>{{ t("Files") }}</button>
-  {% if can_manage %}<button type="button" role="tab" data-tab="backups" aria-controls="tab-backups" aria-selected="false"><span></span>{{ t("Backups") }}</button>{% endif %}
-  {% if can_manage %}<button type="button" role="tab" data-tab="updates" aria-controls="tab-updates" aria-selected="false"><span></span>{{ t("Updates") }}</button>{% endif %}
-  {% if can_manage %}<button type="button" role="tab" data-tab="monitoring" aria-controls="tab-monitoring" aria-selected="false"><span></span>{{ t("Monitoring") }}</button>{% endif %}
-  {% if can_manage %}<button type="button" role="tab" data-tab="settings" aria-controls="tab-settings" aria-selected="false"><span></span>{{ t("Settings") }}</button>{% endif %}
-  {% if request.state.user.role.value == "admin" %}<button type="button" role="tab" data-tab="access" aria-controls="tab-access" aria-selected="false"><span></span>{{ t("Access") }}</button>{% endif %}
-  {% if can_manage %}<button type="button" role="tab" data-tab="danger" aria-controls="tab-danger" aria-selected="false"><span></span>{{ t("Delete server") }}</button>{% endif %}
+  <button type="button" role="tab" data-tab="overview" aria-controls="tab-overview" aria-selected="true"><span class="material-symbols-rounded">dashboard</span>{{ t("Dashboard") }}</button>
+  <button type="button" role="tab" data-tab="console" aria-controls="tab-console" aria-selected="false"><span class="material-symbols-rounded">terminal</span>{{ t("Console") }}</button>
+  <button type="button" role="tab" data-tab="players" aria-controls="tab-players" aria-selected="false"><span class="material-symbols-rounded">group</span>{{ t("Players") }}</button>
+  <button type="button" role="tab" data-tab="files" aria-controls="tab-files" aria-selected="false"><span class="material-symbols-rounded">folder</span>{{ t("Files") }}</button>
+  {% if can_manage %}<button type="button" role="tab" data-tab="backups" aria-controls="tab-backups" aria-selected="false"><span class="material-symbols-rounded">cloud_sync</span>{{ t("Backups") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="updates" aria-controls="tab-updates" aria-selected="false"><span class="material-symbols-rounded">system_update_alt</span>{{ t("Updates") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="monitoring" aria-controls="tab-monitoring" aria-selected="false"><span class="material-symbols-rounded">monitoring</span>{{ t("Monitoring") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="settings" aria-controls="tab-settings" aria-selected="false"><span class="material-symbols-rounded">tune</span>{{ t("Settings") }}</button>{% endif %}
+  {% if request.state.user.role.value == "admin" %}<button type="button" role="tab" data-tab="access" aria-controls="tab-access" aria-selected="false"><span class="material-symbols-rounded">admin_panel_settings</span>{{ t("Access") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="danger" aria-controls="tab-danger" aria-selected="false"><span class="material-symbols-rounded">delete</span>{{ t("Delete server") }}</button>{% endif %}
 </nav>
   </div>
 {% include "_sidebar_utilities.html" %}
@@ -25,7 +25,7 @@
 <div class="server-workspace">
 <div class="title-row server-heading">
   <div class="server-heading-identity">
-    <span class="server-glyph">{{ server.name[:1]|upper }}</span>
+    <span class="server-glyph material-symbols-rounded">dns</span>
     <div><h1>{{ server.name }}</h1></div>
   </div>
   <div class="actions">
@@ -479,8 +479,8 @@ document.querySelectorAll('.update-rollback').forEach(form => requireFormConfirm
 const metricsChart = document.querySelector('#metrics-chart');
 if (metricsChart && metricData.length) {
   const context = metricsChart.getContext('2d'); const width = metricsChart.width; const height = metricsChart.height;
-  context.strokeStyle = '#343238'; context.beginPath(); context.moveTo(0, height - 1); context.lineTo(width, height - 1); context.stroke();
-  const series = [{key:'cpu', color:'#a48fe0'}, {key:'memory', color:'#d0a45d'}, {key:'players', color:'#77b08a'}];
+  context.strokeStyle = '#313139'; context.beginPath(); context.moveTo(0, height - 1); context.lineTo(width, height - 1); context.stroke();
+  const series = [{key:'cpu', color:'#9b7be5'}, {key:'memory', color:'#7699ea'}, {key:'players', color:'#65b8b0'}];
   series.forEach(item => { const values = metricData.map(point => point[item.key] ?? 0); const maximum = Math.max(...values, 1); context.strokeStyle = item.color; context.lineWidth = 3; context.beginPath(); values.forEach((value, index) => { const x = index / Math.max(1, values.length - 1) * width; const y = height - 8 - value / maximum * (height - 20); index ? context.lineTo(x, y) : context.moveTo(x, y); }); context.stroke(); });
 }
 const cpuSamples = metricData.map(point => point.cpu).filter(value => value !== null);

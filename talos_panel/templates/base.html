@@ -6,21 +6,24 @@
   <title>{% block title %}Talos Panel{% endblock %}</title>
   <link rel="stylesheet" href="/static/fonts.css">
   <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/static/async.css">
   <link rel="stylesheet" href="/static/auth.css">
+  <link rel="stylesheet" href="/static/async.css">
 </head>
 <body>
   {% if request.state.user %}<div class="app-frame">
-    <aside class="app-sidebar">
-      <a class="app-brand" href="/"><strong>Talos Panel</strong></a>
+    <header class="mobile-app-bar"><button class="mobile-menu-toggle icon-button" type="button" aria-label="{{ t('Open navigation') }}" aria-expanded="false"><span class="material-symbols-rounded">menu</span></button><a href="/">Talos Panel</a><span></span></header>
+    <div class="sidebar-scrim" aria-hidden="true"></div>
+    <aside class="app-sidebar" id="app-navigation">
+      <div class="sidebar-brand-row"><a class="app-brand" href="/"><span class="brand-symbol material-symbols-rounded">deployed_code</span><strong>Talos Panel</strong></a><button class="sidebar-close icon-button" type="button" aria-label="{{ t('Close navigation') }}"><span class="material-symbols-rounded">close</span></button></div>
       <nav class="app-nav" aria-label="Main navigation">
-        <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span></span>{{ t("Home") }}</a>
-        <a class="{% if request.url.path == '/servers/new' %}active{% endif %}" href="/servers/new"><span></span>{{ t("New server") }}</a>
-        <a class="{% if request.url.path == '/account' %}active{% endif %}" href="/account"><span></span>{{ t("Account") }}</a>
+        <a class="{% if request.url.path == '/' %}active{% endif %}" href="/"><span class="material-symbols-rounded">dns</span>{{ t("Servers") }}</a>
+        <a class="{% if request.url.path == '/servers/new' %}active{% endif %}" href="/servers/new"><span class="material-symbols-rounded">add_circle</span>{{ t("New server") }}</a>
+        <a class="{% if request.url.path == '/account' %}active{% endif %}" href="/account"><span class="material-symbols-rounded">manage_accounts</span>{{ t("Account") }}</a>
         {% if request.state.user.role.value == "admin" %}
-        <a class="{% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span></span>{{ t("Users") }}</a>
-        <a class="{% if request.url.path == '/admin/security' %}active{% endif %}" href="/admin/security"><span></span>{{ t("Security review") }}</a>
-        <a class="{% if request.url.path == '/admin/audit' %}active{% endif %}" href="/admin/audit"><span></span>{{ t("Audit logs") }}</a>
+        <div class="nav-section-label">{{ t("Administration") }}</div>
+        <a class="{% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span class="material-symbols-rounded">group</span>{{ t("Users") }}</a>
+        <a class="{% if request.url.path == '/admin/security' %}active{% endif %}" href="/admin/security"><span class="material-symbols-rounded">shield</span>{{ t("Security review") }}</a>
+        <a class="{% if request.url.path == '/admin/audit' %}active{% endif %}" href="/admin/audit"><span class="material-symbols-rounded">receipt_long</span>{{ t("Audit logs") }}</a>
         {% endif %}
       </nav>
       {% include "_sidebar_utilities.html" %}
@@ -91,6 +94,19 @@
       panels.forEach(panel => panel.classList.toggle('hidden', panel.dataset.localPanel !== button.dataset.localTab));
     }));
   });
+  const appFrame = document.querySelector('.app-frame');
+  const menuToggle = document.querySelector('.mobile-menu-toggle');
+  const closeNavigation = () => {
+    appFrame?.classList.remove('navigation-open');
+    menuToggle?.setAttribute('aria-expanded', 'false');
+  };
+  menuToggle?.addEventListener('click', () => {
+    const open = !appFrame.classList.contains('navigation-open');
+    appFrame.classList.toggle('navigation-open', open);
+    menuToggle.setAttribute('aria-expanded', String(open));
+  });
+  document.querySelector('.sidebar-close')?.addEventListener('click', closeNavigation);
+  document.querySelector('.sidebar-scrim')?.addEventListener('click', closeNavigation);
   {% if request.query_params.get("error") %}
   window.addEventListener('DOMContentLoaded', () => {
     window.talosToast({{ t(request.query_params.get("error"))|tojson }}, true);

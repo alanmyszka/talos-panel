@@ -73,7 +73,7 @@ class InstallationManager:
                 root = self.settings.minecraft_data_root / "servers" / str(server.id)
                 await asyncio.to_thread(root.mkdir, parents=True, exist_ok=True)
                 java_version = java_version_for(server.game_version)
-                concrete_version = None if server.game_version == "LATEST" else server.game_version
+                concrete_version = server.game_version
                 job.installed_version = concrete_version
                 job.java_version = java_version
                 job.state = InstallationState.COMPLETED

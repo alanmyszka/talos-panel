@@ -11,7 +11,7 @@ from talos_panel.server_settings import ServerProperties
 class ServerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     server_type: ServerType
-    game_version: str = Field(min_length=1, max_length=32, pattern=r"^[0-9A-Za-z._+-]+$")
+    game_version: str = Field(min_length=3, max_length=32, pattern=r"^\d+(?:\.\d+){1,2}$")
     memory_mb: int = Field(ge=1024, le=32768)
     host_port: int = Field(ge=1024, le=65535)
     use_aikar_flags: bool = False

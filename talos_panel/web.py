@@ -68,6 +68,7 @@ from talos_panel.jvm_flags import JvmFlagsError, parse_custom_jvm_flags
 from talos_panel.minecraft_status import (
     MinecraftStatusError,
     concrete_minecraft_version,
+    installed_version_from_data,
     query_minecraft_status,
 )
 from talos_panel.models import (
@@ -148,13 +149,9 @@ async def record_reported_version(
     session: AsyncSession, server: MinecraftServer, version_name: str | None
 ) -> str | None:
     concrete = concrete_minecraft_version(version_name)
-    if concrete is None or (
-        concrete == server.installed_version and server.game_version != "LATEST"
-    ):
+    if concrete is None or concrete == server.installed_version:
         return concrete
     server.installed_version = concrete
-    if server.game_version == "LATEST":
-        server.game_version = concrete
     try:
         server.java_version = java_version_for(concrete)
     except InstallationError:
@@ -167,16 +164,19 @@ async def record_reported_version(
     )
     if job is not None and job.state is InstallationState.COMPLETED:
         job.installed_version = concrete
-    update = await session.scalar(
-        select(ServerUpdate)
-        .where(ServerUpdate.server_id == server.id, ServerUpdate.to_version == "LATEST")
-        .order_by(ServerUpdate.created_at.desc())
-        .limit(1)
-    )
-    if update is not None and update.state == "completed":
-        update.to_version = concrete
     await session.commit()
     return concrete
+
+
+async def record_itzg_version(
+    session: AsyncSession, runtime: DockerRuntime, server: MinecraftServer
+) -> str | None:
+    concrete = await asyncio.to_thread(
+        installed_version_from_data, runtime.data_path(server.id)
+    )
+    if concrete is None:
+        return server.installed_version
+    return await record_reported_version(session, server, concrete)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -196,6 +196,7 @@ async def server_summary(
         snapshot = await runtime.status_snapshot(server)
     except Exception:
         return JSONResponse({"runtime_state": "error", "minecraft_ready": False})
+    installed_version = await record_itzg_version(session, runtime, server)
     payload = {
         "runtime_state": snapshot.state,
         "installation_state": server.installation_state.value if server.installation_state else None,
@@ -206,7 +207,7 @@ async def server_summary(
         "ping_ms": None,
         "motd": None,
         "reported_version": None,
-        "installed_version": server.installed_version,
+        "installed_version": installed_version,
     }
     if snapshot.state != "running":
         return JSONResponse(payload)
@@ -389,6 +390,7 @@ async def server_detail(
 ):
     server, job = await _server_and_job(server_id, session, require_user(request))
     runtime: DockerRuntime = request.app.state.runtime
+    await record_itzg_version(session, runtime, server)
     container_id, runtime_state = await runtime.status(server)
     can_manage = await can_manage_server(session, request.state.user, server.id)
     settings_error = None
@@ -896,7 +898,7 @@ async def server_update_options(
 async def update_server_version(
     request: Request,
     server_id: uuid.UUID,
-    target_version: str = Form(min_length=2, max_length=32),
+    target_version: str = Form(pattern=r"^\d+(?:\.\d+){1,2}$"),
     csrf_token: str = Form(),
     session: AsyncSession = Depends(get_session),
 ):
@@ -939,8 +941,7 @@ async def update_server_version(
         if target_version not in versions:
             raise InstallationError("version_not_found", "Minecraft version is unavailable")
         await runtime.remove(server)
-        if target_version != "LATEST":
-            server.installed_version = target_version
+        server.installed_version = target_version
         server.game_version = target_version
         server.java_version = java_version_for(target_version)
         server.container_id = None
@@ -1256,7 +1257,7 @@ async def delete_server_ui(
     await record_audit(
         request,
         "server.delete",
-        server_id=server.id,
+        server_reference_id=server.id,
         server_name=server_name,
         details=f"{server.id}:{server_name}:files_archived={archived is not None}",
     )

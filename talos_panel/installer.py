@@ -18,8 +18,8 @@ class InstallationError(Exception):
 
 
 def java_version_for(game_version: str) -> int:
-    if game_version.upper() == "LATEST":
-        return 25
+    if not RELEASE_VERSION.fullmatch(game_version):
+        raise InstallationError("unsupported_version", "Unsupported Minecraft version")
     try:
         parts = game_version.split(".")
         if parts[0].isdigit() and int(parts[0]) >= 26:
@@ -55,7 +55,7 @@ class ArtifactResolver:
             versions = await self._paper_versions()
         else:
             versions = await self._minecraft_versions()
-        return ["LATEST", *versions]
+        return versions
 
     async def _paper_versions(self) -> list[str]:
         response = await self._get(PAPER_PROJECT_URL)

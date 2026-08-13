@@ -2,7 +2,7 @@
 {% block content %}
 <div class="dashboard-page">
 {% if request.query_params.get("message") %}<script>window.addEventListener('DOMContentLoaded', () => window.talosToast({{ t(request.query_params.get("message"))|tojson }}));</script>{% endif %}
-<div class="title-row dashboard-title"><div><p class="section-label">{{ t("Home") }}</p><h1>{{ t("Servers") }}</h1><p>{{ t("Install and manage Minecraft servers") }}</p></div><a class="button" href="/servers/new">+ {{ t("Create new server") }}</a></div>
+<div class="title-row dashboard-title"><div><p class="section-label">{{ t("Infrastructure") }}</p><h1>{{ t("Servers") }}</h1><p>{{ t("Install and manage Minecraft servers") }}</p></div><a class="button button-with-icon" href="/servers/new"><span class="material-symbols-rounded">add</span>{{ t("Create new server") }}</a></div>
 <section class="server-list">
 <div class="server-list-head"><span>{{ t("Server") }}</span><span>{{ t("Address") }}</span><span>{{ t("Version") }}</span><span>{{ t("Players") }}</span><span>{{ t("Uptime") }}</span><span>{{ t("Status") }}</span></div>
 <div class="server-list-body">
@@ -19,9 +19,9 @@
     {% set display_state = card.runtime_state|replace("_", " ") %}{% set state_class = card.runtime_state %}
   {% endif %}
   <a class="server-row" href="/servers/{{ server.id }}" data-summary-url="/servers/{{ server.id }}/summary">
-    <div class="server-card-identity"><span class="server-glyph">{{ server.name[:1]|upper }}</span><div><h2>{{ server.name }}</h2><p>{{ server.id }}</p></div></div>
+    <div class="server-card-identity"><span class="server-glyph material-symbols-rounded">dns</span><div><h2>{{ server.name }}</h2><p>{{ server.id }}</p></div></div>
     <code>localhost:{{ server.host_port }}</code>
-    <span class="server-version">{{ server.server_type.value|title }} {{ server.installed_version or server.game_version }}</span>
+    <span class="server-version">{{ server.server_type.value|title }} {{ server.installed_version or "—" }}</span>
     <span class="server-player-count">{% if card.runtime_state == "running" and card.players_online is not none %}{{ card.players_online }} / {{ card.players_max }}{% else %}—{% endif %}</span>
     <span class="server-uptime"{% if card.started_at %} data-started-at="{{ card.started_at.isoformat() }}"{% endif %}>—</span>
     <span class="status server-runtime-status state-{{ state_class }}">{{ t(display_state) }}</span>

@@ -53,3 +53,11 @@
   font-display: swap;
   src: url("/static/fonts/press-start-2p-400.ttf") format("truetype");
 }
+
+@font-face {
+  font-family: "Material Symbols Rounded";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("/static/fonts/material-symbols-rounded.ttf") format("truetype");
+}
