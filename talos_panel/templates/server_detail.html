@@ -10,7 +10,8 @@
 <div id="tab-overview" class="tab-panel" data-tab-panel="overview" role="tabpanel">
 <section class="server-layout{% if server.installation_state and server.installation_state.value == 'completed' %} single{% endif %}">
   <div class="card overview">
-    <div class="overview-title"><h2>{{ t("Server details") }}</h2><span id="runtime-badge" class="status state-{{ runtime_state }}">{{ t(runtime_state|replace("_", " ")) }}</span></div>
+    {% set display_runtime_state = "loading" if runtime_state == "running" else runtime_state %}
+    <div class="overview-title"><h2>{{ t("Server details") }}</h2><span id="runtime-badge" class="status state-{{ display_runtime_state }}">{{ t(display_runtime_state|replace("_", " ")) }}</span></div>
     <dl class="details">
       <div><dt>{{ t("Address") }}</dt><dd><code id="server-address">localhost:{{ server.host_port }}</code><button class="copy mini-button" type="button" data-copy="localhost:{{ server.host_port }}">{{ t("Copy") }}</button></dd></div>
       <div><dt>{{ t("Port") }}</dt><dd id="server-port">{{ server.host_port }}</dd></div>
@@ -152,6 +153,11 @@
 
 <script>
 const ui = {
+  runtimeStates: {
+    running: {{ t("running")|tojson }}, starting: {{ t("starting")|tojson }},
+    exited: {{ t("exited")|tojson }}, created: {{ t("created")|tojson }},
+    dead: {{ t("dead")|tojson }}, not_created: {{ t("not created")|tojson }}
+  },
   readyToStart: {{ t("Ready to start")|tojson }},
   failed: {{ t("Failed")|tojson }},
   installationFailed: {{ t("Installation failed.")|tojson }},
@@ -1042,8 +1048,9 @@ function renderSocketState(data) {
   if (!document.querySelector('[data-tab-panel="console"]').classList.contains('hidden')) {
     renderConsoleOutput(data);
   }
-  runtimeBadge.textContent = data.state.replace('_', ' ');
-  runtimeBadge.className = `status state-${data.state}`;
+  const displayState = data.state === 'running' && !data.ready ? 'starting' : data.state;
+  runtimeBadge.textContent = ui.runtimeStates[displayState] || displayState.replaceAll('_', ' ');
+  runtimeBadge.className = `status state-${displayState}`;
   if (data.installed_version) document.querySelector('#installed-version').textContent = `${serverSoftware} ${data.installed_version}`;
   startForm.classList.toggle('hidden', data.state === 'running' || !installationComplete);
   restartForm.classList.toggle('hidden', data.state !== 'running');

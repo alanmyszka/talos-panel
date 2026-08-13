@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 
 from fastapi import UploadFile
 
-TEXT_SUFFIXES = {".conf", ".json", ".log", ".md", ".properties", ".toml", ".txt", ".yaml", ".yml"}
+TEXT_SUFFIXES = {".conf", ".json", ".log", ".md", ".properties", ".toml", ".txt", ".yaml", ".yml", ".env"}
 HIDDEN_ROOT_NAMES = {".trash"}
 PROTECTED_ROOT_NAMES = {".trash"}
 LIVE_PROTECTED_SUFFIXES = {".dat", ".db", ".ldb", ".log", ".mca", ".sqlite", ".sqlite3"}

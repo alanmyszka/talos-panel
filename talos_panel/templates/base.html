@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Talos Panel{% endblock %}</title>
-  <link rel="stylesheet" href="/static/fonts.css">
-  <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/static/auth.css">
-  <link rel="stylesheet" href="/static/async.css">
+  <link rel="stylesheet" href="{{ static_url('fonts.css') }}">
+  <link rel="stylesheet" href="{{ static_url('app.css') }}">
+  <link rel="stylesheet" href="{{ static_url('auth.css') }}">
+  <link rel="stylesheet" href="{{ static_url('async.css') }}">
 </head>
 <body>
   {% if request.state.user %}<div class="app-frame">

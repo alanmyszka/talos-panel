@@ -1,9 +1,13 @@
+import hashlib
 from collections.abc import Callable
+from functools import lru_cache
+from pathlib import Path, PurePosixPath
 
 from fastapi import Request
 
 SUPPORTED_LANGUAGES = {"en", "pl"}
 LANGUAGE_COOKIE = "talos_language"
+STATIC_ROOT = Path(__file__).parent / "static"
 
 PL = {
     "Servers": "Serwery",
@@ -431,6 +435,26 @@ def translate(text: str, language: str) -> str:
     return PL.get(text, text) if language == "pl" else text
 
 
+@lru_cache(maxsize=64)
+def _static_asset_digest(name: str, modified_ns: int, size: int) -> str:
+    del modified_ns, size
+    return hashlib.sha256((STATIC_ROOT / name).read_bytes()).hexdigest()[:12]
+
+
+def static_asset_url(name: str) -> str:
+    relative = PurePosixPath(name)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("Invalid static asset path")
+    path = STATIC_ROOT.joinpath(*relative.parts)
+    metadata = path.stat()
+    digest = _static_asset_digest(relative.as_posix(), metadata.st_mtime_ns, metadata.st_size)
+    return f"/static/{relative.as_posix()}?v={digest}"
+
+
 def template_context(request: Request) -> dict[str, str | Callable[[str], str]]:
     language = language_from_request(request)
-    return {"lang": language, "t": lambda text: translate(text, language)}
+    return {
+        "lang": language,
+        "t": lambda text: translate(text, language),
+        "static_url": static_asset_url,
+    }

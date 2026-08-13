@@ -1658,8 +1658,15 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
 
         async def send_status() -> None:
             previous = None
+            initial_status = True
             while True:
-                snapshot = await runtime.snapshot(server)
+                snapshot = (
+                    await runtime.status_snapshot(server)
+                    if initial_status
+                    else await runtime.snapshot(server)
+                )
+                was_initial_status = initial_status
+                initial_status = False
                 minecraft = None
                 if snapshot.state == "running":
                     try:
@@ -1694,13 +1701,24 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
                     async with send_lock:
                         await websocket.send_json(payload)
                     previous = payload
+                if was_initial_status:
+                    continue
                 await asyncio.sleep(2)
 
         async def send_logs() -> None:
+            streamed_container_id = None
             while True:
-                async with send_lock:
-                    await websocket.send_json({"type": "logs_reset"})
-                async for chunk in runtime.stream_logs(server):
+                container_id, state = await runtime.status(server)
+                if state != "running":
+                    await asyncio.sleep(1)
+                    continue
+                new_container = container_id != streamed_container_id
+                if new_container:
+                    async with send_lock:
+                        await websocket.send_json({"type": "logs_reset"})
+                    streamed_container_id = container_id
+                tail = 300 if new_container else 0
+                async for chunk in runtime.stream_logs(server, tail=tail):
                     async with send_lock:
                         await websocket.send_json({"type": "log", "log": chunk})
                 await asyncio.sleep(1)
