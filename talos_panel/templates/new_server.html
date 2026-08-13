@@ -8,7 +8,7 @@
   <div class="creation-grid">
   <section class="creation-section"><h2>{{ t("Server profile") }}</h2>
   <label>{{ t("Name") }}<input name="name" required maxlength="80" placeholder="Survival"></label>
-  <div class="columns"><label>{{ t("Server type") }}<select id="server-type" name="server_type" required><option value="paper">Paper</option><option value="vanilla">Vanilla</option><option value="purpur">Purpur</option><option value="pufferfish">Pufferfish</option><option value="fabric">Fabric</option><option value="quilt">Quilt</option><option value="forge">Forge</option><option value="neoforge">NeoForge</option></select></label><label>{{ t("Version") }}<select id="version" name="game_version" required><option>{{ t("Loading versions…") }}</option></select></label></div>
+  <div class="columns"><label>{{ t("Server type") }}<select id="server-type" name="server_type" required><option value="paper">Paper</option><option value="vanilla">Vanilla</option><option value="purpur">Purpur</option><option value="pufferfish">Pufferfish</option><option value="fabric">Fabric</option><option value="quilt">Quilt</option><option value="forge">Forge</option><option value="neoforge">NeoForge</option></select></label><label>{{ t("Version") }}<select id="version" name="game_version" data-loading-label="{{ t('Loading versions…') }}" required><option>{{ t("Loading versions…") }}</option></select></label></div>
   <div class="columns"><label>{{ t("Memory") }} (MB)<input type="number" name="memory_mb" min="1024" max="32768" value="4096" required></label><label>{{ t("Host port") }}<input type="number" name="host_port" min="1024" max="65535" value="25565" required></label></div>
   </section>
   <section class="creation-section"><h2>{{ t("Gameplay settings") }}</h2>
@@ -31,15 +31,5 @@
   <div class="creation-submit"><button type="submit">{{ t("Create server") }}</button></div>
 </form>
 </div>
-<script>
-const typeSelect = document.querySelector('#server-type');
-const versionSelect = document.querySelector('#version');
-async function loadVersions() {
-  versionSelect.innerHTML = '<option>{{ t("Loading versions…") }}</option>';
-  const response = await fetch(`/servers/version-options?server_type=${encodeURIComponent(typeSelect.value)}`);
-  versionSelect.innerHTML = await response.text();
-}
-typeSelect.addEventListener('change', loadVersions);
-loadVersions();
-</script>
 {% endblock %}
+{% block scripts %}<script src="{{ static_url('js/new-server.js') }}"></script>{% endblock %}

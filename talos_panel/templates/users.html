@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t("Users") }} · Talos Panel{% endblock %}
 {% block content %}
-<div class="management-page users-page">
+<div class="management-page users-page" data-message="{{ t(message) if message else '' }}">
   <div class="title-row"><div><p class="section-label">{{ t("Administration") }}</p><h1>{{ t("Users") }}</h1><p>{{ t("Manage accounts and see exactly which servers they can access.") }}</p></div></div>
   <nav class="local-tabs" data-local-tabs aria-label="{{ t('User sections') }}"><button type="button" data-local-tab="accounts" aria-selected="true">{{ t("Accounts") }}</button><button type="button" data-local-tab="create" aria-selected="false">{{ t("Create user") }}</button></nav>
   <div class="local-tab-workspace users-workspace">
@@ -25,8 +25,5 @@
   </div>
 </div>
 <dialog id="user-confirm-dialog" class="confirm-dialog"><form method="dialog"><h2>{{ t("Confirm action") }}</h2><p id="user-confirm-message"></p><div class="dialog-actions"><button class="secondary" value="cancel">{{ t("Cancel") }}</button><button class="danger" id="user-confirm-submit" value="confirm">{{ t("Confirm") }}</button></div></form></dialog>
-<script>
-{% if message %}window.addEventListener('DOMContentLoaded', () => window.talosToast({{ t(message)|tojson }}));{% endif %}
-(() => { const dialog = document.querySelector('#user-confirm-dialog'); const message = document.querySelector('#user-confirm-message'); let pending = null; document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventListener('submit', event => { event.preventDefault(); pending = form; message.textContent = form.dataset.confirm; dialog.showModal(); })); document.querySelector('#user-confirm-submit').addEventListener('click', () => { if (pending) pending.submit(); }); })();
-</script>
 {% endblock %}
+{% block scripts %}<script src="{{ static_url('js/users.js') }}"></script>{% endblock %}
