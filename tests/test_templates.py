@@ -5,8 +5,22 @@ from jinja2 import Environment, FileSystemLoader
 from talos_panel.web import minecraft_is_ready, player_snapshot
 
 
-def test_console_script_targets_command_input_not_csrf_input() -> None:
+def server_detail_source() -> str:
+    template_dir = Path("talos_panel/templates")
+    return "\n".join(
+        (template_dir / name).read_text(encoding="utf-8")
+        for name in ("server_detail.html", "_server_sidebar.html", "_server_header.html")
+    )
+
+
+def test_server_detail_uses_shared_sidebar_and_header_partials() -> None:
     template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    assert '{% include "_server_sidebar.html" %}' in template
+    assert '{% include "_server_header.html" %}' in template
+
+
+def test_console_script_targets_command_input_not_csrf_input() -> None:
+    template = server_detail_source()
     assert "'.command-form input[name=\"command\"]'" in template
 
 
@@ -36,7 +50,7 @@ def test_minecraft_ready_requires_a_running_container() -> None:
 
 
 def test_delete_form_requires_typed_confirmation() -> None:
-    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    template = server_detail_source()
     assert "confirmation.value !== deleteForm.dataset.serverName" in template
     assert "window.confirm(" not in template
     assert "window.prompt(" not in template
@@ -47,7 +61,7 @@ def test_delete_form_requires_typed_confirmation() -> None:
 
 
 def test_server_detail_uses_role_aware_client_side_tabs() -> None:
-    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    template = server_detail_source()
     assert 'data-tab="overview"' in template
     assert 'data-tab="console"' in template
     assert 'data-tab-panel="settings"' in template
@@ -56,7 +70,7 @@ def test_server_detail_uses_role_aware_client_side_tabs() -> None:
 
 def test_dashboard_uses_runtime_state_and_completed_installation_is_hidden() -> None:
     index = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     installation = Path("talos_panel/templates/installation.html").read_text(encoding="utf-8")
     assert 'card.runtime_state == "running"' in index
     assert 'display_state = "offline"' in index
@@ -76,7 +90,7 @@ def test_dashboard_server_rows_are_not_wrapped_in_a_card() -> None:
 
 
 def test_file_manager_is_a_server_tab_and_uses_safe_dom_rendering() -> None:
-    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    template = server_detail_source()
     assert 'data-tab="files"' in template
     assert 'data-tab-panel="files"' in template
     assert "name.textContent" in template
@@ -90,7 +104,7 @@ def test_file_manager_is_a_server_tab_and_uses_safe_dom_rendering() -> None:
 
 def test_notifications_use_toasts_and_editor_content_is_not_reset_after_save() -> None:
     base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     assert 'id="toast-region"' in base
     assert "window.talosToast" in base
     assert "const isEditor = form.id === 'text-editor'" in detail
@@ -98,7 +112,7 @@ def test_notifications_use_toasts_and_editor_content_is_not_reset_after_save() -
 
 
 def test_installation_updates_without_reload_and_guards_start_action() -> None:
-    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    template = server_detail_source()
     assert "async function pollInstallation()" in template
     assert "/api/v1/servers/{{ server.id }}/installation" in template
     assert "setTimeout(pollInstallation, 1000)" in template
@@ -107,20 +121,20 @@ def test_installation_updates_without_reload_and_guards_start_action() -> None:
 
 
 def test_opening_console_scrolls_to_latest_output() -> None:
-    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    template = server_detail_source()
     assert "if (selected.dataset.tab === 'console')" in template
     assert "output.scrollTop = output.scrollHeight" in template
 
 
 def test_console_only_follows_logs_when_reader_is_near_the_bottom() -> None:
-    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    template = server_detail_source()
     assert "function consoleIsNearBottom()" in template
     assert "const followConsole = consoleIsNearBottom()" in template
     assert "followConsole ? output.scrollHeight : previousConsoleScroll" in template
 
 
 def test_server_detail_uses_framed_sidebar_workspace() -> None:
-    template = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    template = server_detail_source()
     assert 'class="server-shell"' in template
     assert 'class="server-sidebar"' in template
     assert 'class="server-workspace"' in template
@@ -161,7 +175,7 @@ def test_dashboard_uses_sidebar_and_server_rows() -> None:
 
 def test_language_switch_and_translated_javascript_are_present() -> None:
     base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     assert 'action="/language/en"' in base
     assert 'action="/language/pl"' in base
     assert '<html lang="{{ lang }}">' in base
@@ -170,7 +184,7 @@ def test_language_switch_and_translated_javascript_are_present() -> None:
 
 def test_sidebar_utilities_are_anchored_in_shared_footer() -> None:
     base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     utilities = Path("talos_panel/templates/_sidebar_utilities.html").read_text(encoding="utf-8")
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert '{% include "_sidebar_utilities.html" %}' in base
@@ -185,7 +199,7 @@ def test_sidebar_utilities_are_anchored_in_shared_footer() -> None:
 
 def test_sidebar_navigation_and_server_identity_are_consistent() -> None:
     base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     utilities = Path("talos_panel/templates/_sidebar_utilities.html").read_text(encoding="utf-8")
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert base.index('href="/admin/users"') < base.index('{% include "_sidebar_utilities.html" %}')
@@ -224,7 +238,7 @@ def test_server_list_spacing_and_motion_use_design_tokens() -> None:
 
 def test_access_views_explain_account_state_and_show_server_roles() -> None:
     users = Path("talos_panel/templates/users.html").read_text(encoding="utf-8")
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     assert "Active means that the account is allowed to log in." in users
     assert "access_by_user.get(user.id)" in users
     assert "Full access to every server (global administrator)." in users
@@ -234,7 +248,7 @@ def test_access_views_explain_account_state_and_show_server_roles() -> None:
 
 
 def test_file_manager_downloads_directories_and_server_list_scrolls() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     index = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert "const download = document.createElement('a');" in detail
@@ -277,7 +291,7 @@ def test_dashboard_and_login_use_viewport_bounded_layouts() -> None:
 
 
 def test_ui_polish_uses_balanced_dashboard_branding_and_static_cards() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert "Commands are sent directly to Minecraft stdin" not in detail
     assert "Symbolic links and protected Talos files" not in detail
@@ -297,7 +311,7 @@ def test_ui_polish_uses_balanced_dashboard_branding_and_static_cards() -> None:
 
 
 def test_file_manager_uses_general_file_and_folder_uploads() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     file_service = Path("talos_panel/file_service.py").read_text(encoding="utf-8")
     web = Path("talos_panel/web.py").read_text(encoding="utf-8")
@@ -325,7 +339,7 @@ def test_file_manager_uses_general_file_and_folder_uploads() -> None:
 
 def test_server_heading_avoids_duplicate_metadata_and_version_includes_software() -> None:
     dashboard = Path("talos_panel/templates/index.html").read_text(encoding="utf-8")
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     assert "server.installed_version or server.game_version" not in dashboard
     assert "{{ server.game_version }} · localhost:{{ server.host_port }}" not in detail
     assert "{{ server.server_type.value|title }} {{ server.installed_version }}" in detail
@@ -342,7 +356,7 @@ def test_deleted_server_audit_uses_snapshot_reference_without_live_foreign_key()
 
 
 def test_console_header_and_server_details_avoid_redundant_labels_and_rules() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert 'id="console-status"' not in detail
     assert "Live output" not in detail
@@ -352,7 +366,7 @@ def test_console_header_and_server_details_avoid_redundant_labels_and_rules() ->
 
 
 def test_backups_have_a_dedicated_safe_management_tab() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert 'data-tab="backups"' in detail
     assert 'data-tab-panel="backups"' in detail
@@ -369,7 +383,7 @@ def test_backups_have_a_dedicated_safe_management_tab() -> None:
 
 
 def test_players_have_profiles_and_async_administration_actions() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     web = Path("talos_panel/web.py").read_text(encoding="utf-8")
     assert 'data-tab="players"' in detail
@@ -387,7 +401,7 @@ def test_players_have_profiles_and_async_administration_actions() -> None:
 
 
 def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     base = Path("talos_panel/templates/base.html").read_text(encoding="utf-8")
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     web = Path("talos_panel/web.py").read_text(encoding="utf-8")
@@ -424,7 +438,7 @@ def test_operational_tabs_cover_backups_updates_and_monitoring() -> None:
 
 
 def test_access_list_uses_available_height_and_scrolls_independently() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     stylesheet = Path("talos_panel/static/async.css").read_text(encoding="utf-8")
     assert 'class="access-members"' in detail
     assert ".server-workspace:has(#tab-access:not(.hidden))" in stylesheet
@@ -434,7 +448,7 @@ def test_access_list_uses_available_height_and_scrolls_independently() -> None:
 
 
 def test_small_ui_consistency_details() -> None:
-    detail = Path("talos_panel/templates/server_detail.html").read_text(encoding="utf-8")
+    detail = server_detail_source()
     create = Path("talos_panel/templates/new_server.html").read_text(encoding="utf-8")
     assert 'class="copy mini-button"' in detail
     assert "Read / write" not in detail

@@ -1,0 +1,11 @@
+<div class="title-row server-heading">
+  <div class="server-heading-identity">
+    <span class="server-glyph material-symbols-rounded">dns</span>
+    <div><h1>{{ server.name }}</h1></div>
+  </div>
+  <div class="actions">
+    <form class="runtime-action start-action{% if runtime_state == 'running' or not server.installation_state or server.installation_state.value != 'completed' %} hidden{% endif %}" method="post" action="/servers/{{ server.id }}/start"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button type="submit">{{ t("Start server") }}</button></form>
+    <form class="runtime-action restart-action{% if runtime_state != 'running' %} hidden{% endif %}" method="post" action="/servers/{{ server.id }}/restart"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="secondary" type="submit">{{ t("Restart") }}</button></form>
+    <form class="runtime-action stop-action{% if runtime_state != 'running' %} hidden{% endif %}" method="post" action="/servers/{{ server.id }}/stop"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="danger" type="submit">{{ t("Stop server") }}</button></form>
+  </div>
+</div>

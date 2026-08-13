@@ -1,0 +1,19 @@
+<aside class="server-sidebar">
+  <div class="sidebar-brand-row"><a class="app-brand" href="/"><span class="brand-symbol material-symbols-rounded">deployed_code</span><strong>Talos Panel</strong></a><button class="sidebar-close icon-button" type="button" aria-label="{{ t('Close navigation') }}"><span class="material-symbols-rounded">close</span></button></div>
+  <div class="server-navigation">
+  <a class="server-home-link" href="/"><span class="material-symbols-rounded">dns</span>{{ t("Servers") }}</a>
+<nav class="server-tabs" role="tablist" aria-label="Server sections">
+  <button type="button" role="tab" data-tab="overview" aria-controls="tab-overview" aria-selected="true"><span class="material-symbols-rounded">dashboard</span>{{ t("Dashboard") }}</button>
+  <button type="button" role="tab" data-tab="console" aria-controls="tab-console" aria-selected="false"><span class="material-symbols-rounded">terminal</span>{{ t("Console") }}</button>
+  <button type="button" role="tab" data-tab="players" aria-controls="tab-players" aria-selected="false"><span class="material-symbols-rounded">group</span>{{ t("Players") }}</button>
+  <button type="button" role="tab" data-tab="files" aria-controls="tab-files" aria-selected="false"><span class="material-symbols-rounded">folder</span>{{ t("Files") }}</button>
+  {% if can_manage %}<button type="button" role="tab" data-tab="backups" aria-controls="tab-backups" aria-selected="false"><span class="material-symbols-rounded">cloud_sync</span>{{ t("Backups") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="updates" aria-controls="tab-updates" aria-selected="false"><span class="material-symbols-rounded">system_update_alt</span>{{ t("Updates") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="monitoring" aria-controls="tab-monitoring" aria-selected="false"><span class="material-symbols-rounded">monitoring</span>{{ t("Monitoring") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="settings" aria-controls="tab-settings" aria-selected="false"><span class="material-symbols-rounded">tune</span>{{ t("Settings") }}</button>{% endif %}
+  {% if request.state.user.role.value == "admin" %}<button type="button" role="tab" data-tab="access" aria-controls="tab-access" aria-selected="false"><span class="material-symbols-rounded">admin_panel_settings</span>{{ t("Access") }}</button>{% endif %}
+  {% if can_manage %}<button type="button" role="tab" data-tab="danger" aria-controls="tab-danger" aria-selected="false"><span class="material-symbols-rounded">delete</span>{{ t("Delete server") }}</button>{% endif %}
+</nav>
+  </div>
+{% include "_sidebar_utilities.html" %}
+</aside>
