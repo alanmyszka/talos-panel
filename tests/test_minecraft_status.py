@@ -8,6 +8,7 @@ from talos_panel.minecraft_status import (
     installed_version_from_data,
     query_minecraft_status,
 )
+from talos_panel.web import minecraft_is_ready, player_snapshot
 
 
 def varint(value: int) -> bytes:
@@ -24,6 +25,24 @@ def test_concrete_version_is_extracted_from_server_status() -> None:
     assert concrete_minecraft_version("Paper 26.2") == "26.2"
     assert concrete_minecraft_version("Paper 1.21.8") == "1.21.8"
     assert concrete_minecraft_version(None) is None
+
+
+def test_player_snapshot_uses_latest_list_response() -> None:
+    logs = """There are 0 of a max of 20 players online:
+There are 2 of a max of 20 players online: Steve, Alex
+"""
+    assert player_snapshot(logs) == (2, 20, ["Steve", "Alex"])
+
+
+def test_player_snapshot_is_unknown_before_list_response() -> None:
+    assert player_snapshot('Done (1.23s)! For help, type "help"') == (None, None, [])
+
+
+def test_minecraft_ready_requires_a_running_container() -> None:
+    logs = 'Done (1.23s)! For help, type "help"'
+    assert minecraft_is_ready("running", logs) is True
+    assert minecraft_is_ready("exited", logs) is False
+    assert minecraft_is_ready("running", "Starting Minecraft server") is False
 
 
 def test_installed_version_is_read_from_itzg_environment(tmp_path) -> None:
