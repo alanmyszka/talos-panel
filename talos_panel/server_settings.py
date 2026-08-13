@@ -4,6 +4,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from talos_panel.server_filesystem import apply_server_ownership
+
 
 class ServerSettingsError(Exception):
     pass
@@ -151,6 +153,7 @@ def write_server_properties(root: Path, settings: ServerProperties) -> None:
             handle.write("\n".join(output) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+        apply_server_ownership(root, temporary)
         os.replace(temporary, destination)
     except OSError as exc:
         raise ServerSettingsError("Server properties could not be saved") from exc

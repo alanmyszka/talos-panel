@@ -123,6 +123,8 @@ def test_text_edits_are_bounded_and_atomic(tmp_path: Path) -> None:
     with pytest.raises(FileServiceError, match="limit"):
         write_text_file(tmp_path, "server.properties", "x" * 101, 100)
     assert not list(tmp_path.glob("*.tmp"))
+    assert path.stat().st_uid == tmp_path.stat().st_uid
+    assert path.stat().st_gid == tmp_path.stat().st_gid
 
 
 @pytest.mark.asyncio
@@ -139,6 +141,8 @@ async def test_upload_accepts_jars_and_preserves_a_relative_directory(tmp_path: 
     )
     assert destination.read_bytes() == content
     assert destination == tmp_path / "plugins" / "Example" / "config" / "Example.jar"
+    assert destination.stat().st_uid == tmp_path.stat().st_uid
+    assert destination.stat().st_gid == tmp_path.stat().st_gid
 
 
 @pytest.mark.asyncio

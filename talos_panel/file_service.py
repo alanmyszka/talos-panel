@@ -8,6 +8,8 @@ from pathlib import Path, PurePosixPath
 
 from fastapi import UploadFile
 
+from talos_panel.server_filesystem import apply_server_ownership, apply_server_ownership_tree
+
 TEXT_SUFFIXES = {".conf", ".json", ".log", ".md", ".properties", ".toml", ".txt", ".yaml", ".yml", ".env"}
 HIDDEN_ROOT_NAMES = {".trash"}
 PROTECTED_ROOT_NAMES = {".trash"}
@@ -189,7 +191,7 @@ def write_text_file(root: Path, value: str, content: str, max_bytes: int) -> Non
     encoded = content.encode("utf-8")
     if len(encoded) > max_bytes:
         raise FileServiceError("The text file exceeds the edit limit")
-    _atomic_write(path, encoded, overwrite=True)
+    _atomic_write(root, path, encoded, overwrite=True)
 
 
 def create_directory(root: Path, parent: str, name: str) -> Path:
@@ -198,6 +200,7 @@ def create_directory(root: Path, parent: str, name: str) -> Path:
     resolve_server_path(root, directory.relative_to(root).as_posix(), allow_root=False)
     try:
         directory.mkdir()
+        apply_server_ownership(root, directory)
     except FileExistsError as exc:
         raise FileServiceError("A file or directory with this name already exists") from exc
     return directory
@@ -245,6 +248,7 @@ def copy_path(root: Path, source_value: str, destination_parent: str, name: str)
             shutil.copytree(source, destination, symlinks=False)
         else:
             shutil.copy2(source, destination, follow_symlinks=False)
+        apply_server_ownership_tree(root, destination)
     except OSError as exc:
         if destination.is_dir():
             shutil.rmtree(destination, ignore_errors=True)
@@ -293,6 +297,7 @@ def extract_zip(root: Path, archive_value: str, destination_parent: str, max_byt
                     target.mkdir(parents=True, exist_ok=True)
                     if not existed:
                         created_directories.append(target)
+                        apply_server_ownership(root, target)
                     continue
                 missing_parents = [
                     path for path in reversed(target.parents) if path != root and not path.exists()
@@ -300,8 +305,10 @@ def extract_zip(root: Path, archive_value: str, destination_parent: str, max_byt
                 for parent in missing_parents:
                     parent.mkdir()
                     created_directories.append(parent)
+                    apply_server_ownership(root, parent)
                 with archive.open(entry) as source, target.open("xb") as output:
                     shutil.copyfileobj(source, output, length=1024 * 1024)
+                apply_server_ownership(root, target)
                 created_files.append(target)
         return len(created_files)
     except FileServiceError:
@@ -339,6 +346,10 @@ async def store_upload(
         raise FileServiceError("A file with this name already exists")
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
+        current = destination.parent
+        while current != root:
+            apply_server_ownership(root, current)
+            current = current.parent
     except OSError as exc:
         raise FileServiceError("The upload directory could not be created") from exc
     descriptor, temporary_name = tempfile.mkstemp(prefix=".upload-", suffix=".tmp", dir=destination.parent)
@@ -353,6 +364,7 @@ async def store_upload(
                 handle.write(chunk)
             handle.flush()
             os.fsync(handle.fileno())
+        apply_server_ownership(root, temporary)
         os.replace(temporary, destination)
         return destination
     except (OSError, zipfile.BadZipFile) as exc:
@@ -415,7 +427,7 @@ def _contains_symlink(directory: Path) -> bool:
     return False
 
 
-def _atomic_write(destination: Path, content: bytes, *, overwrite: bool) -> None:
+def _atomic_write(root: Path, destination: Path, content: bytes, *, overwrite: bool) -> None:
     if destination.is_symlink() or (destination.exists() and not overwrite):
         raise FileServiceError("The destination cannot be replaced")
     descriptor, temporary_name = tempfile.mkstemp(
@@ -427,6 +439,7 @@ def _atomic_write(destination: Path, content: bytes, *, overwrite: bool) -> None
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        apply_server_ownership(root, temporary)
         os.replace(temporary, destination)
     except OSError as exc:
         raise FileServiceError("The file could not be saved") from exc

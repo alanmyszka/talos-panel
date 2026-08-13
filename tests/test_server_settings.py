@@ -35,6 +35,8 @@ def test_properties_round_trip_preserves_unmanaged_values(tmp_path: Path) -> Non
     assert "difficulty=hard" in content
     assert read_server_properties(tmp_path) == settings
     assert not list(tmp_path.glob("*.tmp"))
+    assert destination.stat().st_uid == tmp_path.stat().st_uid
+    assert destination.stat().st_gid == tmp_path.stat().st_gid
 
 
 def test_properties_reject_symlink(tmp_path: Path) -> None:
