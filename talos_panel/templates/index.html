@@ -21,7 +21,7 @@
   <a class="server-row" href="/servers/{{ server.id }}" data-summary-url="/servers/{{ server.id }}/summary">
     <div class="server-card-identity"><span class="server-glyph">{{ server.name[:1]|upper }}</span><div><h2>{{ server.name }}</h2><p>{{ server.id }}</p></div></div>
     <code>localhost:{{ server.host_port }}</code>
-    <span>{{ server.server_type.value|title }} {{ server.game_version }}</span>
+    <span class="server-version">{{ server.server_type.value|title }} {{ server.installed_version or server.game_version }}</span>
     <span class="server-player-count">{% if card.runtime_state == "running" and card.players_online is not none %}{{ card.players_online }} / {{ card.players_max }}{% else %}—{% endif %}</span>
     <span class="server-uptime"{% if card.started_at %} data-started-at="{{ card.started_at.isoformat() }}"{% endif %}>—</span>
     <span class="status server-runtime-status state-{{ state_class }}">{{ t(display_state) }}</span>
@@ -67,6 +67,9 @@
       status.className = `status server-runtime-status state-${state}`;
       row.querySelector('.server-player-count').textContent = data.minecraft_ready
         ? `${data.players_online} / ${data.players_max}` : '—';
+      if (data.installed_version) {
+        row.querySelector('.server-version').textContent = `${row.querySelector('.server-version').textContent.split(' ')[0]} ${data.installed_version}`;
+      }
       const uptime = row.querySelector('.server-uptime');
       if (data.started_at) uptime.dataset.startedAt = data.started_at;
       else {

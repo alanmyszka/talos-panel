@@ -62,11 +62,14 @@ from talos_panel.install_service import InstallationManager
 from talos_panel.installer import (
     ArtifactResolver,
     InstallationError,
-    JarDownloader,
     java_version_for,
 )
 from talos_panel.jvm_flags import JvmFlagsError, parse_custom_jvm_flags
-from talos_panel.minecraft_status import MinecraftStatusError, query_minecraft_status
+from talos_panel.minecraft_status import (
+    MinecraftStatusError,
+    concrete_minecraft_version,
+    query_minecraft_status,
+)
 from talos_panel.models import (
     AuditEvent,
     Backup,
@@ -141,6 +144,41 @@ def minecraft_is_ready(runtime_state: str, logs: str) -> bool:
     )
 
 
+async def record_reported_version(
+    session: AsyncSession, server: MinecraftServer, version_name: str | None
+) -> str | None:
+    concrete = concrete_minecraft_version(version_name)
+    if concrete is None or (
+        concrete == server.installed_version and server.game_version != "LATEST"
+    ):
+        return concrete
+    server.installed_version = concrete
+    if server.game_version == "LATEST":
+        server.game_version = concrete
+    try:
+        server.java_version = java_version_for(concrete)
+    except InstallationError:
+        pass
+    job = await session.scalar(
+        select(InstallationJob)
+        .where(InstallationJob.server_id == server.id)
+        .order_by(InstallationJob.created_at.desc())
+        .limit(1)
+    )
+    if job is not None and job.state is InstallationState.COMPLETED:
+        job.installed_version = concrete
+    update = await session.scalar(
+        select(ServerUpdate)
+        .where(ServerUpdate.server_id == server.id, ServerUpdate.to_version == "LATEST")
+        .order_by(ServerUpdate.created_at.desc())
+        .limit(1)
+    )
+    if update is not None and update.state == "completed":
+        update.to_version = concrete
+    await session.commit()
+    return concrete
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, session: AsyncSession = Depends(get_session)):
     servers = await accessible_servers(session, require_user(request))
@@ -168,6 +206,7 @@ async def server_summary(
         "ping_ms": None,
         "motd": None,
         "reported_version": None,
+        "installed_version": server.installed_version,
     }
     if snapshot.state != "running":
         return JSONResponse(payload)
@@ -180,6 +219,7 @@ async def server_summary(
         )
     except MinecraftStatusError:
         return JSONResponse(payload)
+    installed_version = await record_reported_version(session, server, minecraft.version_name)
     payload.update(
         {
             "minecraft_ready": True,
@@ -188,6 +228,7 @@ async def server_summary(
             "ping_ms": minecraft.latency_ms,
             "motd": minecraft.motd,
             "reported_version": minecraft.version_name,
+            "installed_version": installed_version or server.installed_version,
         }
     )
     return JSONResponse(payload)
@@ -551,17 +592,24 @@ async def server_command_ui(
     server, _ = await _server_and_job(server_id, session, require_user(request))
     runtime: DockerRuntime = request.app.state.runtime
     try:
-        await runtime.send_command(server, command)
+        command_output = await runtime.send_command(server, command)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await record_audit(
         request,
         "server.command",
-        server_id=server.id,
+        server_reference_id=server.id,
         details=normalize_console_command(command).split(maxsplit=1)[0],
     )
     if request.headers.get("X-Talos-Async") == "true":
-        return JSONResponse({"ok": True, "message": ui_message(request, "Command sent")})
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": ui_message(request, "Command sent"),
+                "command": normalize_console_command(command),
+                "output": command_output,
+            }
+        )
     return RedirectResponse(f"/servers/{server.id}?message=Command+sent", status_code=303)
 
 
@@ -885,24 +933,21 @@ async def update_server_version(
     try:
         async with httpx.AsyncClient(
             timeout=settings.download_timeout_seconds,
-            follow_redirects=True,
             headers={"User-Agent": settings.download_user_agent},
         ) as client:
-            resolved = await ArtifactResolver(client).resolve(server.server_type, target_version)
-
-            async def progress(downloaded: int, total: int | None) -> None:
-                return None
-
-            await JarDownloader(client, settings).download(
-                resolved, runtime.data_path(server.id) / "server.jar", progress
-            )
-        server.installed_version = resolved.version
-        server.game_version = resolved.version
-        server.java_version = resolved.java_version
+            versions = await ArtifactResolver(client).versions(server.server_type)
+        if target_version not in versions:
+            raise InstallationError("version_not_found", "Minecraft version is unavailable")
+        await runtime.remove(server)
+        if target_version != "LATEST":
+            server.installed_version = target_version
+        server.game_version = target_version
+        server.java_version = java_version_for(target_version)
+        server.container_id = None
         update.state = "completed"
         update.finished_at = datetime.now(UTC)
         await session.commit()
-    except (InstallationError, httpx.HTTPError) as exc:
+    except (InstallationError, httpx.HTTPError, RuntimeError) as exc:
         update.state = "failed"
         update.error_message = str(exc)[:500]
         update.finished_at = datetime.now(UTC)
@@ -949,6 +994,8 @@ async def rollback_server_update(
     server.installed_version = update.from_version
     server.game_version = update.from_version
     server.java_version = java_version_for(update.from_version)
+    await runtime.remove(server)
+    server.container_id = None
     update.state = "rolled_back"
     await session.commit()
     await record_audit(request, "server.update_rollback", server_id=server.id)
@@ -1209,6 +1256,8 @@ async def delete_server_ui(
     await record_audit(
         request,
         "server.delete",
+        server_id=server.id,
+        server_name=server_name,
         details=f"{server.id}:{server_name}:files_archived={archived is not None}",
     )
     return RedirectResponse("/?message=Server+deleted", status_code=303)
@@ -1489,7 +1538,7 @@ async def toggle_plugin(
 ):
     require_csrf(request, csrf_token)
     server, _ = await _server_and_job(server_id, session, require_user(request), owner=True)
-    if server.server_type is not ServerType.PAPER:
+    if server.server_type not in {ServerType.PAPER, ServerType.PURPUR, ServerType.PUFFERFISH}:
         raise HTTPException(status_code=409, detail="Plugins are supported only for Paper")
     runtime: DockerRuntime = request.app.state.runtime
     await _require_safe_file_mutation(runtime, server, path, "plugin_toggle")
@@ -1528,9 +1577,10 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
         await websocket.accept()
         runtime: DockerRuntime = websocket.app.state.runtime
         settings = get_settings()
-        previous = None
-        receive_task = asyncio.create_task(websocket.receive())
-        try:
+        send_lock = asyncio.Lock()
+
+        async def send_status() -> None:
+            previous = None
             while True:
                 snapshot = await runtime.snapshot(server)
                 minecraft = None
@@ -1543,12 +1593,15 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
                         )
                     except MinecraftStatusError:
                         minecraft = None
-                logs = await runtime.logs(server)
-                ready = minecraft is not None
+                installed_version = None
+                if minecraft is not None:
+                    installed_version = await record_reported_version(
+                        session, server, minecraft.version_name
+                    )
                 payload = {
+                    "type": "status",
                     "state": snapshot.state,
-                    "ready": ready,
-                    "logs": logs,
+                    "ready": minecraft is not None,
                     "started_at": snapshot.started_at.isoformat()
                     if snapshot.started_at
                     else None,
@@ -1558,24 +1611,54 @@ async def server_console(websocket: WebSocket, server_id: uuid.UUID):
                     "players_online": minecraft.online if minecraft else None,
                     "players_max": minecraft.maximum if minecraft else None,
                     "players": minecraft.sample_players if minecraft else [],
+                    "installed_version": installed_version or server.installed_version,
                 }
                 if payload != previous:
-                    await websocket.send_json(payload)
+                    async with send_lock:
+                        await websocket.send_json(payload)
                     previous = payload
-                done, _ = await asyncio.wait({receive_task}, timeout=2)
+                await asyncio.sleep(2)
+
+        async def send_logs() -> None:
+            previous = None
+            while True:
+                logs = await runtime.logs(server)
+                if logs != previous:
+                    async with send_lock:
+                        await websocket.send_json({"type": "logs", "logs": logs})
+                    previous = logs
+                await asyncio.sleep(0.25)
+
+        status_task = asyncio.create_task(send_status())
+        logs_task = asyncio.create_task(send_logs())
+        receive_task = asyncio.create_task(websocket.receive())
+        try:
+            while True:
+                done, _ = await asyncio.wait(
+                    {receive_task, status_task, logs_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
                 if receive_task in done:
                     message = receive_task.result()
                     if message["type"] == "websocket.disconnect":
                         break
                     receive_task = asyncio.create_task(websocket.receive())
+                for task in (status_task, logs_task):
+                    if task in done:
+                        task.result()
         except WebSocketDisconnect:
             pass
         finally:
-            if not receive_task.done():
-                receive_task.cancel()
+            tasks = (receive_task, status_task, logs_task)
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            for task in tasks:
                 try:
-                    await receive_task
+                    await task
                 except asyncio.CancelledError:
+                    pass
+                except (RuntimeError, WebSocketDisconnect):
                     pass
             try:
                 await websocket.close()

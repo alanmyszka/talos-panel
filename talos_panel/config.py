@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     metric_retention_days: int = 7
     crash_restart_limit: int = 3
     download_timeout_seconds: float = 60.0
-    max_server_jar_bytes: int = 200 * 1024 * 1024
     max_file_upload_bytes: int = 128 * 1024 * 1024
     max_text_edit_bytes: int = 1024 * 1024
     max_backup_restore_bytes: int = 20 * 1024 * 1024 * 1024

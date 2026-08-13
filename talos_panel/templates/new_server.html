@@ -2,13 +2,13 @@
 {% block title %}{{ t("New server") }} · Talos Panel{% endblock %}
 {% block content %}
 <div class="server-create-page">
-<div class="creation-page-head"><div><p class="section-label">{{ t("Infrastructure") }}</p><h1>{{ t("Create a server") }}</h1><p>{{ t("The JAR will be downloaded and verified from the official source.") }}</p></div></div>
+<div class="creation-page-head"><div><p class="section-label">{{ t("Infrastructure") }}</p><h1>{{ t("Create a server") }}</h1><p>{{ t("The server distribution will be prepared by the ITZG Minecraft image on first start.") }}</p></div></div>
 <form method="post" action="/servers" class="card form server-create-form">
   <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
   <div class="creation-grid">
   <section class="creation-section"><h2>{{ t("Server profile") }}</h2>
   <label>{{ t("Name") }}<input name="name" required maxlength="80" placeholder="Survival"></label>
-  <div class="columns"><label>{{ t("Server type") }}<select id="server-type" name="server_type" required><option value="paper">Paper</option><option value="vanilla">Vanilla</option></select></label><label>{{ t("Version") }}<select id="version" name="game_version" required><option>{{ t("Loading versions…") }}</option></select></label></div>
+  <div class="columns"><label>{{ t("Server type") }}<select id="server-type" name="server_type" required><option value="paper">Paper</option><option value="vanilla">Vanilla</option><option value="purpur">Purpur</option><option value="pufferfish">Pufferfish</option><option value="fabric">Fabric</option><option value="quilt">Quilt</option><option value="forge">Forge</option><option value="neoforge">NeoForge</option></select></label><label>{{ t("Version") }}<select id="version" name="game_version" required><option>{{ t("Loading versions…") }}</option></select></label></div>
   <div class="columns"><label>{{ t("Memory") }} (MB)<input type="number" name="memory_mb" min="1024" max="32768" value="4096" required></label><label>{{ t("Host port") }}<input type="number" name="host_port" min="1024" max="65535" value="25565" required></label></div>
   </section>
   <section class="creation-section"><h2>{{ t("Gameplay settings") }}</h2>
@@ -28,7 +28,7 @@
   </div>
   <section class="creation-section jvm-section"><div><h2>{{ t("JVM startup") }}</h2><p>{{ t("Modern Java usually performs well without additional flags. Changes apply when the container is created.") }}</p></div><label class="check"><input type="checkbox" name="use_aikar_flags" value="true">{{ t("Use Aikar JVM flags") }}</label><label>{{ t("Additional JVM flags") }}<textarea name="custom_jvm_flags" maxlength="2048" rows="3" spellcheck="false" placeholder="-Dpaper.playerconnection.keepalive=60"></textarea><span class="hint">{{ t("Heap, classpath, JAR and Java agent arguments are managed by Talos and cannot be overridden.") }}</span></label></section>
   <label class="check eula-check"><input type="checkbox" name="eula_accepted" value="true" required><span>{{ t("I accept the") }} <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer">Minecraft EULA</a></span></label>
-  <div class="creation-submit"><button type="submit">{{ t("Create and install") }}</button></div>
+  <div class="creation-submit"><button type="submit">{{ t("Create server") }}</button></div>
 </form>
 </div>
 <script>

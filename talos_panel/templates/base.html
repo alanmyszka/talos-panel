@@ -91,6 +91,14 @@
       panels.forEach(panel => panel.classList.toggle('hidden', panel.dataset.localPanel !== button.dataset.localTab));
     }));
   });
+  {% if request.query_params.get("error") %}
+  window.addEventListener('DOMContentLoaded', () => {
+    window.talosToast({{ t(request.query_params.get("error"))|tojson }}, true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('error');
+    history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  });
+  {% endif %}
   </script>
 </body>
 </html>

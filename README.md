@@ -1,7 +1,7 @@
 # Talos Panel
 
 Talos Panel is a self-hosted web panel for installing and managing Minecraft Java Edition
-servers. It supports **Paper** and **Vanilla**, runs on Docker, and provides an English and
+servers. It uses the **itzg/minecraft-server** Docker image, runs on Docker, and provides an English and
 Polish interface.
 
 ## Features
@@ -9,12 +9,12 @@ Polish interface.
 ### Server creation and installation
 <img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/91152dcc-afa2-41b3-82a4-fc8052355eba" />
 
-- create Paper and Vanilla servers from the web interface;
+- create Vanilla, Paper, Purpur, Pufferfish, Fabric, Quilt, Forge and NeoForge servers;
 - select an available Minecraft version;
 - configure the server name, port, and memory;
 - configure initial gameplay settings;
 - optionally enable Aikar flags or provide custom JVM flags;
-- follow installation progress and see installation errors;
+- let the ITZG image prepare the selected distribution on first start;
 - automatically select the required Java version.
 
 ### Server management
@@ -58,7 +58,7 @@ Polish interface.
 - edit supported text files;
 - extract ZIP archives;
 - delete files and directories;
-- enable and disable Paper plugin JARs.
+- enable and disable plugin JARs on Paper-compatible servers.
 
 ### Server settings
 <img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/36f187e7-0e37-4273-bf75-c8bdeb687337" />
@@ -84,7 +84,7 @@ Polish interface.
 ### Server updates
 <img width="1920" height="1080" alt="obraz" src="https://github.com/user-attachments/assets/6c94966b-b4d1-40f0-a8f9-484eab82c48c" />
 
-- check available Paper and Vanilla versions;
+- check available Minecraft versions for each supported server type;
 - update a server to a selected version;
 - create a recovery backup before updating;
 - view update history;

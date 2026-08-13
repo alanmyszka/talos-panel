@@ -34,12 +34,17 @@ class OperationsManager:
         self.stopping = asyncio.Event()
 
     async def start(self) -> None:
+        self.stopping.clear()
         self.task = asyncio.create_task(self._worker(), name="operations-worker")
 
     async def stop(self) -> None:
         self.stopping.set()
         if self.task:
-            await self.task
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
 
     async def _worker(self) -> None:
         while not self.stopping.is_set():

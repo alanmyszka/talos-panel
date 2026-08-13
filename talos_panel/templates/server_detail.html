@@ -110,7 +110,7 @@
 </div>
 
 <div id="tab-updates" class="tab-panel hidden" data-tab-panel="updates" role="tabpanel">
-<section class="card updates-card"><div class="overview-title"><div><h2>{{ t("Server updates") }}</h2><p>{{ t("Talos creates a recovery point before replacing the server JAR.") }}</p></div><span class="status">{{ server.installed_version or "—" }}</span></div><form id="server-update-form" class="update-form" method="post" action="/servers/{{ server.id }}/update"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label>{{ t("Target version") }}<select name="target_version" required><option value="">{{ t("Loading versions…") }}</option></select></label><button class="backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Backup and update") }}</button></form><div class="update-history">{% for update in updates %}<article><div><strong>{{ update.from_version }} → {{ update.to_version }}</strong><span>{{ update.created_at.strftime("%Y-%m-%d %H:%M") }} · {{ t(update.state) }}</span>{% if update.error_message %}<small class="error">{{ update.error_message }}</small>{% endif %}</div>{% if update.backup_id and update.state in ["completed", "failed"] %}<form class="update-rollback" method="post" action="/servers/{{ server.id }}/updates/{{ update.id }}/rollback"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="secondary backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Rollback") }}</button></form>{% endif %}</article>{% else %}<p class="hint">{{ t("No updates have been performed yet.") }}</p>{% endfor %}</div></section>
+<section class="card updates-card"><div class="overview-title"><div><h2>{{ t("Server updates") }}</h2><p>{{ t("Talos creates a recovery point, then ITZG applies the selected version on next start.") }}</p></div><span class="status">{{ server.installed_version or "—" }}</span></div><form id="server-update-form" class="update-form" method="post" action="/servers/{{ server.id }}/update"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label>{{ t("Target version") }}<select name="target_version" required><option value="">{{ t("Loading versions…") }}</option></select></label><button class="backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Backup and update") }}</button></form><div class="update-history">{% for update in updates %}<article><div><strong>{{ update.from_version }} → {{ update.to_version }}</strong><span>{{ update.created_at.strftime("%Y-%m-%d %H:%M") }} · {{ t(update.state) }}</span>{% if update.error_message %}<small class="error">{{ update.error_message }}</small>{% endif %}</div>{% if update.backup_id and update.state in ["completed", "failed"] %}<form class="update-rollback" method="post" action="/servers/{{ server.id }}/updates/{{ update.id }}/rollback"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><button class="secondary backup-requires-stopped" type="submit"{% if runtime_state == "running" %} disabled{% endif %}>{{ t("Rollback") }}</button></form>{% endif %}</article>{% else %}<p class="hint">{{ t("No updates have been performed yet.") }}</p>{% endfor %}</div></section>
 </div>
 
 <div id="tab-monitoring" class="tab-panel hidden" data-tab-panel="monitoring" role="tabpanel"><section class="card monitoring-card"><div class="overview-title"><div><h2>{{ t("Monitoring") }}</h2><p>{{ t("CPU, memory and player history from the last 24 hours.") }}</p></div><span class="status{% if server.restart_failures >= 3 %} state-error{% endif %}">{{ server.restart_failures }} {{ t("recent failures") }}</span></div><div class="monitoring-values"><div><span>{{ t("Latest CPU") }}</span><strong id="monitoring-cpu">—</strong></div><div><span>{{ t("Peak memory") }}</span><strong id="monitoring-memory">—</strong></div><div><span>{{ t("Peak players") }}</span><strong id="monitoring-players">—</strong></div><div><span>{{ t("Samples") }}</span><strong id="monitoring-samples">{{ metric_data|length }}</strong></div></div><div class="chart-legend"><span class="cpu">CPU</span><span class="memory">{{ t("Memory") }}</span><span class="players">{{ t("Players") }}</span></div><canvas id="metrics-chart" width="1200" height="320"></canvas><form class="restart-policy" method="post" action="/servers/{{ server.id }}/restart-policy"><input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}"><label class="check"><input type="checkbox" name="auto_restart" value="true"{% if server.auto_restart %} checked{% endif %}> {{ t("Automatically restart after a crash") }}</label><button class="secondary" type="submit">{{ t("Save policy") }}</button></form><div class="runtime-history-head"><h3>{{ t("Runtime history") }}</h3><span class="hint">{{ t("Latest 30 events") }}</span></div><div class="runtime-history">{% for event in runtime_events %}<article><code>{{ event.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</code><strong>{{ event.action }}</strong><span>{{ event.details or "" }}</span></article>{% else %}<p class="hint">{{ t("No runtime events yet.") }}</p>{% endfor %}</div></section></div>
@@ -198,7 +198,7 @@ const ui = {
   op: "OP", whitelist: {{ t("Whitelist")|tojson }}, banned: {{ t("Banned")|tojson }}, kick: {{ t("Kick")|tojson }}, ban: {{ t("Ban")|tojson }}, pardon: {{ t("Pardon")|tojson }},
   addWhitelist: {{ t("Add to whitelist")|tojson }}, removeWhitelist: {{ t("Remove from whitelist")|tojson }}, grantOp: {{ t("Grant OP")|tojson }}, revokeOp: {{ t("Revoke OP")|tojson }},
   partialOnlineList: {{ t("Minecraft did not expose every online player; the online markers may be incomplete.")|tojson }}, serverMustRun: {{ t("Start the server to perform player actions.")|tojson }}
-  ,preparing: {{ t("Preparing operation…")|tojson }}, archiving: {{ t("Creating backup archive…")|tojson }}, recoveryPoint: {{ t("Creating recovery point…")|tojson }}, downloadingUpdate: {{ t("Downloading and verifying server JAR…")|tojson }}, finalizing: {{ t("Finalizing changes…")|tojson }}
+  ,preparing: {{ t("Preparing operation…")|tojson }}, archiving: {{ t("Creating backup archive…")|tojson }}, recoveryPoint: {{ t("Creating recovery point…")|tojson }}, downloadingUpdate: {{ t("Configuring the ITZG server version…")|tojson }}, finalizing: {{ t("Finalizing changes…")|tojson }}
 };
 const output = document.querySelector('#console-output');
 const runtimeBadge = document.querySelector('#runtime-badge');
@@ -243,6 +243,8 @@ let minecraftReady = false;
 let startedAt = null;
 let installationComplete = {{ "true" if server.installation_state and server.installation_state.value == "completed" else "false" }};
 let latestConsoleData = null;
+let serverConsoleLogs = '';
+const localConsoleEntries = [];
 let actionDialogResolve = null;
 
 function confirmAction(message, withReason = false) {
@@ -278,8 +280,17 @@ function consoleIsNearBottom() {
 function renderConsoleOutput(data) {
   const followConsole = consoleIsNearBottom();
   const previousConsoleScroll = output.scrollTop;
-  output.textContent = data.logs || (data.state === 'running' ? 'Server is starting…' : 'No logs yet. Start the server to see its console.');
+  const serverLogs = serverConsoleLogs || (data?.state === 'running' ? 'Server is starting…' : 'No logs yet. Start the server to see its console.');
+  output.textContent = localConsoleEntries.length ? `${serverLogs}\n${localConsoleEntries.join('\n')}` : serverLogs;
   output.scrollTop = followConsole ? output.scrollHeight : previousConsoleScroll;
+}
+
+function appendCommandResult(command, result) {
+  localConsoleEntries.push(`> ${command}`);
+  if (result) localConsoleEntries.push(result);
+  if (localConsoleEntries.length > 100) localConsoleEntries.splice(0, localConsoleEntries.length - 100);
+  if (latestConsoleData) renderConsoleOutput(latestConsoleData);
+  output.scrollTop = output.scrollHeight;
 }
 
 function playerInitials(name) {
@@ -550,7 +561,7 @@ function renderInstallation(data) {
     detail.textContent = `${humanSize(data.bytes_downloaded)} of ${humanSize(data.total_bytes)} downloaded`;
   } else if (data.state === 'completed') {
     installationComplete = true;
-    detail.textContent = `Minecraft ${data.installed_version} is installed. You can start the server now.`;
+    detail.textContent = `Minecraft ${data.installed_version} is configured. ITZG will prepare its files when the server starts.`;
     document.querySelector('#installed-version').textContent = data.installed_version ? `${serverSoftware} ${data.installed_version}` : '—';
     document.querySelector('#installed-java').textContent = data.java_version || '—';
     startForm.classList.remove('hidden');
@@ -966,7 +977,10 @@ async function submitWithoutReload(form) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'The operation failed');
     showNotice(data.message);
-    if (form.classList.contains('command-form')) form.reset();
+    if (form.classList.contains('command-form')) {
+      if (data.output) appendCommandResult(data.command, data.output);
+      form.reset();
+    }
   } catch (error) {
     showNotice(error.message, true);
   } finally {
@@ -1058,6 +1072,7 @@ function renderSocketState(data) {
   }
   runtimeBadge.textContent = data.state.replace('_', ' ');
   runtimeBadge.className = `status state-${data.state}`;
+  if (data.installed_version) document.querySelector('#installed-version').textContent = `${serverSoftware} ${data.installed_version}`;
   startForm.classList.toggle('hidden', data.state === 'running' || !installationComplete);
   restartForm.classList.toggle('hidden', data.state !== 'running');
   stopForm.classList.toggle('hidden', data.state !== 'running');
@@ -1093,7 +1108,16 @@ function renderSocketState(data) {
   }
 }
 socket.onmessage = event => {
-  pendingSocketData = JSON.parse(event.data);
+  const message = JSON.parse(event.data);
+  if (message.type === 'logs') {
+    if (message.logs !== serverConsoleLogs) localConsoleEntries.length = 0;
+    serverConsoleLogs = message.logs;
+    if (!document.querySelector('[data-tab-panel="console"]').classList.contains('hidden')) {
+      renderConsoleOutput(latestConsoleData);
+    }
+    return;
+  }
+  pendingSocketData = message;
   if (socketRenderTimer !== null) return;
   socketRenderTimer = window.setTimeout(() => {
     const data = pendingSocketData;

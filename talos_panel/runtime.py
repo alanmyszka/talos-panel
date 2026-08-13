@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,7 +17,7 @@ from talos_panel.models import MinecraftServer
 @dataclass(frozen=True)
 class RuntimeProfile:
     image: str
-    jar_name: str = "server.jar"
+    itzg_type: str
 
 
 @dataclass(frozen=True)
@@ -29,13 +30,8 @@ class RuntimeSnapshot:
     memory_limit_bytes: int | None = None
 
 
-SUPPORTED_JAVA_IMAGES = {
-    8: "eclipse-temurin:8-jre",
-    11: "eclipse-temurin:11-jre",
-    17: "eclipse-temurin:17-jre",
-    21: "eclipse-temurin:21-jre",
-    25: "eclipse-temurin:25-jre",
-}
+SUPPORTED_JAVA_VERSIONS = {8, 11, 17, 21, 25}
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def normalize_console_command(command: str) -> str:
@@ -49,10 +45,28 @@ def normalize_console_command(command: str) -> str:
     return normalized
 
 
+def clean_console_logs(logs: str) -> str:
+    return "\n".join(
+        line
+        for line in logs.splitlines()
+        if not (
+            "Thread RCON Client /" in line
+            and line.endswith((" started", " shutting down"))
+        )
+    )
+
+
+def clean_console_response(response: str) -> str:
+    return ANSI_ESCAPE.sub("", response).strip()
+
+
 def profile_for(server: MinecraftServer) -> RuntimeProfile:
-    if server.java_version not in SUPPORTED_JAVA_IMAGES:
+    if server.java_version not in SUPPORTED_JAVA_VERSIONS:
         raise ValueError("Server does not have a supported installed Java profile")
-    return RuntimeProfile(image=SUPPORTED_JAVA_IMAGES[server.java_version])
+    return RuntimeProfile(
+        image=f"itzg/minecraft-server:java{server.java_version}",
+        itzg_type=server.server_type.value.upper(),
+    )
 
 
 class DockerRuntime:
@@ -110,6 +124,10 @@ class DockerRuntime:
                 labels.get("io.talos-panel.memory-mb") == str(server.memory_mb)
                 and labels.get("io.talos-panel.host-port") == str(server.host_port)
                 and labels.get("io.talos-panel.jvm-profile") == self._jvm_profile_hash(server)
+                and labels.get("io.talos-panel.server-type") == server.server_type.value
+                and labels.get("io.talos-panel.game-version") == server.game_version
+                and labels.get("io.talos-panel.runtime") == "itzg"
+                and labels.get("io.talos-panel.console-mode") == "pipe"
             )
             if container.status == "running" or profile_matches:
                 if container.status != "running":
@@ -121,25 +139,33 @@ class DockerRuntime:
 
         profile = profile_for(server)
         data_path = self.host_data_path(server.id)
-        command = [
-            "java",
-            *startup_jvm_arguments(
-                server.memory_mb, server.use_aikar_flags, server.custom_jvm_flags
-            ),
-            "-jar",
-            profile.jar_name,
-            "nogui",
-        ]
+        custom_flags = startup_jvm_arguments(
+            server.memory_mb, False, server.custom_jvm_flags
+        )[2:]
+        environment = {
+            "EULA": "TRUE",
+            "TYPE": profile.itzg_type,
+            "VERSION": server.game_version,
+            "MEMORY": f"{server.memory_mb}M",
+            "USE_AIKAR_FLAGS": "TRUE" if server.use_aikar_flags else "FALSE",
+            "ENABLE_RCON": "FALSE",
+            "CREATE_CONSOLE_IN_PIPE": "TRUE",
+        }
+        xx_flags = [flag for flag in custom_flags if flag.startswith("-XX")]
+        other_flags = [flag for flag in custom_flags if not flag.startswith("-XX")]
+        if xx_flags:
+            environment["JVM_XX_OPTS"] = " ".join(xx_flags)
+        if other_flags:
+            environment["JVM_OPTS"] = " ".join(other_flags)
         container = self.client.containers.run(
             profile.image,
-            command=command,
             name=name,
             detach=True,
             init=True,
             network=self.settings.minecraft_network,
             ports={"25565/tcp": server.host_port},
-            volumes={str(data_path): {"bind": "/server", "mode": "rw"}},
-            working_dir="/server",
+            volumes={str(data_path): {"bind": "/data", "mode": "rw"}},
+            environment=environment,
             mem_limit=f"{server.memory_mb}m",
             labels={
                 "io.talos-panel.managed": "true",
@@ -147,6 +173,10 @@ class DockerRuntime:
                 "io.talos-panel.memory-mb": str(server.memory_mb),
                 "io.talos-panel.host-port": str(server.host_port),
                 "io.talos-panel.jvm-profile": self._jvm_profile_hash(server),
+                "io.talos-panel.server-type": server.server_type.value,
+                "io.talos-panel.game-version": server.game_version,
+                "io.talos-panel.runtime": "itzg",
+                "io.talos-panel.console-mode": "pipe",
             },
             restart_policy={"Name": "no"},
             stdin_open=True,
@@ -280,14 +310,14 @@ class DockerRuntime:
             except NotFound:
                 return ""
             output = container.logs(stdout=True, stderr=True, tail=tail, timestamps=False)
-            return output.decode("utf-8", errors="replace")
+            return clean_console_logs(output.decode("utf-8", errors="replace"))
 
         return await asyncio.to_thread(read)
 
-    async def send_command(self, server: MinecraftServer, command: str) -> None:
+    async def send_command(self, server: MinecraftServer, command: str) -> str:
         normalized = normalize_console_command(command)
 
-        def send() -> None:
+        def send() -> str:
             try:
                 container = self._managed_container(server.id)
             except NotFound as exc:
@@ -295,22 +325,38 @@ class DockerRuntime:
             container.reload()
             if container.status != "running":
                 raise RuntimeError("Server is not running")
-            connection = container.attach_socket(
-                params={"stdin": 1, "stream": 1}, ws=False
-            )
-            payload = f"{normalized}\n".encode()
+            labels = container.attrs.get("Config", {}).get("Labels", {})
+            if labels.get("io.talos-panel.runtime") == "itzg":
+                if labels.get("io.talos-panel.console-mode") == "pipe":
+                    result = container.exec_run(
+                        ["mc-send-to-console", normalized], user="1000"
+                    )
+                    if result.exit_code != 0:
+                        detail = clean_console_response(
+                            result.output.decode("utf-8", errors="replace")
+                        )
+                        raise RuntimeError(detail or "Command could not be sent")
+                    return ""
+                result = container.exec_run(["rcon-cli", normalized])
+                if result.exit_code != 0:
+                    detail = clean_console_response(
+                        result.output.decode("utf-8", errors="replace")
+                    )
+                    raise RuntimeError(detail or "Command could not be sent")
+                return clean_console_response(
+                    result.output.decode("utf-8", errors="replace")
+                )
+            connection = container.attach_socket(params={"stdin": 1, "stream": 1}, ws=False)
             try:
                 socket = getattr(connection, "_sock", connection)
-                if hasattr(socket, "sendall"):
-                    socket.sendall(payload)
-                else:
-                    connection.write(payload)
+                socket.sendall(f"{normalized}\n".encode())
             except (APIError, OSError) as exc:
                 raise RuntimeError("Command could not be sent") from exc
             finally:
                 connection.close()
+            return ""
 
-        await asyncio.to_thread(send)
+        return await asyncio.to_thread(send)
 
     async def restart(self, server: MinecraftServer) -> tuple[str, str]:
         await self.stop(server)

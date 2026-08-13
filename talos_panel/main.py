@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from talos_panel.api import router as servers_router
 from talos_panel.auth import AuthenticationMiddleware
@@ -10,6 +12,7 @@ from talos_panel.auth_web import router as auth_web_router
 from talos_panel.bootstrap import ensure_secret
 from talos_panel.config import get_settings
 from talos_panel.db import SessionFactory
+from talos_panel.error_handlers import http_exception_handler, validation_exception_handler
 from talos_panel.install_service import InstallationManager
 from talos_panel.operations_service import OperationsManager
 from talos_panel.runtime import DockerRuntime
@@ -37,6 +40,8 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_middleware(AuthenticationMiddleware, settings=settings)
 app.include_router(servers_router, prefix=settings.api_prefix)
 app.include_router(auth_api_router, prefix=settings.api_prefix)

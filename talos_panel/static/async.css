@@ -856,7 +856,7 @@ code,
 .local-tabs {
   display: flex;
   flex: 0 0 auto;
-  gap: var(--space-1);
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--line);
@@ -1596,6 +1596,22 @@ code,
   color: var(--muted);
 }
 
+.audit-server {
+  display: flex;
+  min-width: 210px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audit-server strong {
+  font-weight: 600;
+}
+
+.audit-server code {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .empty-cell {
   padding: var(--space-8) !important;
   color: var(--muted);
@@ -1880,6 +1896,7 @@ code,
   grid-template-columns: minmax(240px, 1.5fr) minmax(165px, .9fr) minmax(145px, .75fr) minmax(80px, .4fr) minmax(90px, .45fr) minmax(140px, max-content);
   align-items: center;
   gap: var(--space-5);
+  border-radius: 12px;
 }
 
 .server-list-head {
@@ -1895,17 +1912,38 @@ code,
 }
 
 .server-row {
+  position: relative;
   min-height: 80px;
   padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--line);
+  border-radius: 0;
   color: var(--muted);
   font-size: var(--text-sm);
   text-decoration: none;
   transition: background var(--motion-fast) ease;
 }
 
+.server-row:first-child {
+  margin-top: 10px;
+  border-radius: 12px 12px 0 0;
+}
+
+.server-row:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: var(--line);
+}
+
 .server-row:last-child {
   border-bottom: 0;
+  border-radius: 0 0 12px 12px;
+}
+
+.server-row:only-child {
+  border-radius: 12px;
 }
 
 .server-row:hover {

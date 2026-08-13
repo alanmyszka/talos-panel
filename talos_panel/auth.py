@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from talos_panel.config import Settings
 from talos_panel.db import SessionFactory
-from talos_panel.models import AuditEvent, User, UserRole, UserSession
+from talos_panel.models import AuditEvent, MinecraftServer, User, UserRole, UserSession
 
 password_hasher = PasswordHasher()
 DUMMY_HASH = password_hasher.hash("talos-panel-dummy-password")
@@ -150,15 +150,23 @@ async def record_audit(
     action: str,
     *,
     server_id=None,
+    server_reference_id=None,
+    server_name: str | None = None,
     details: str | None = None,
 ) -> None:
     user = require_user(request)
     async with SessionFactory() as database:
+        if server_id is not None and server_name is None:
+            server_name = await database.scalar(
+                select(MinecraftServer.name).where(MinecraftServer.id == server_id)
+            )
         database.add(
             AuditEvent(
                 user_id=user.id,
                 action=action,
                 server_id=server_id,
+                server_reference_id=server_reference_id or server_id,
+                server_name=server_name,
                 ip_address=client_ip(request),
                 details=details,
             )

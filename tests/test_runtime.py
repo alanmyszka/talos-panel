@@ -5,7 +5,13 @@ import pytest
 
 from talos_panel.config import Settings
 from talos_panel.jvm_flags import AIKAR_FLAGS, JvmFlagsError, startup_jvm_arguments
-from talos_panel.runtime import DockerRuntime, normalize_console_command, profile_for
+from talos_panel.runtime import (
+    DockerRuntime,
+    clean_console_logs,
+    clean_console_response,
+    normalize_console_command,
+    profile_for,
+)
 
 
 def test_runtime_paths_are_derived_from_server_id() -> None:
@@ -22,8 +28,12 @@ def test_runtime_paths_are_derived_from_server_id() -> None:
 
 
 def test_runtime_profile_uses_installed_java_version() -> None:
-    server = type("Server", (), {"java_version": 25})()
-    assert profile_for(server).image == "eclipse-temurin:25-jre"
+    server = type(
+        "Server", (), {"java_version": 25, "server_type": type("Type", (), {"value": "paper"})()}
+    )()
+    profile = profile_for(server)
+    assert profile.image == "itzg/minecraft-server:java25"
+    assert profile.itzg_type == "PAPER"
 
 
 def test_jvm_startup_arguments_include_safe_custom_and_optional_aikar_flags() -> None:
@@ -63,6 +73,79 @@ def test_console_accepts_commands_with_or_without_a_leading_slash() -> None:
     assert normalize_console_command("/ say hello") == "say hello"
     with pytest.raises(ValueError, match="between 1 and 256"):
         normalize_console_command("/")
+
+
+def test_console_hides_rcon_connection_noise() -> None:
+    logs = (
+        "[INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started\n"
+        "[INFO]: Available commands\n"
+        "[INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down"
+    )
+    assert clean_console_logs(logs) == "[INFO]: Available commands"
+
+
+def test_console_strips_ansi_colors_from_legacy_rcon_output() -> None:
+    assert clean_console_response("\x1b[33mHelp:\x1b[0m Index") == "Help: Index"
+
+
+@pytest.mark.asyncio
+async def test_itzg_console_returns_rcon_output() -> None:
+    class Result:
+        exit_code = 0
+        output = b"Available commands: help, list"
+
+    class Container:
+        status = "running"
+
+        def __init__(self) -> None:
+            self.attrs = {"Config": {"Labels": {"io.talos-panel.runtime": "itzg"}}}
+
+        def reload(self) -> None:
+            pass
+
+        def exec_run(self, command):
+            assert command == ["rcon-cli", "help"]
+            return Result()
+
+    runtime = object.__new__(DockerRuntime)
+    runtime._managed_container = lambda server_id: Container()
+    server = type("Server", (), {"id": uuid.uuid4()})()
+
+    assert await runtime.send_command(server, "help") == "Available commands: help, list"
+
+
+@pytest.mark.asyncio
+async def test_itzg_console_pipe_sends_command_without_rcon() -> None:
+    class Result:
+        exit_code = 0
+        output = b""
+
+    class Container:
+        status = "running"
+
+        def __init__(self) -> None:
+            self.attrs = {
+                "Config": {
+                    "Labels": {
+                        "io.talos-panel.runtime": "itzg",
+                        "io.talos-panel.console-mode": "pipe",
+                    }
+                }
+            }
+
+        def reload(self) -> None:
+            pass
+
+        def exec_run(self, command, *, user):
+            assert command == ["mc-send-to-console", "help"]
+            assert user == "1000"
+            return Result()
+
+    runtime = object.__new__(DockerRuntime)
+    runtime._managed_container = lambda server_id: Container()
+    server = type("Server", (), {"id": uuid.uuid4()})()
+
+    assert await runtime.send_command(server, "help") == ""
 
 
 @pytest.mark.asyncio

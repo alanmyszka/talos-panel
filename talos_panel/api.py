@@ -172,6 +172,8 @@ async def delete_server(
     await record_audit(
         request,
         "server.delete",
+        server_reference_id=server.id,
+        server_name=server_name,
         details=f"{server.id}:{server_name}:files_archived={archived is not None}",
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

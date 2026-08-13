@@ -402,7 +402,7 @@ async def audit_logs_page(
         conditions.append(AuditEvent.details.ilike(f"%{audit_details.strip()}%"))
     for raw_value, column in (
         (audit_user, AuditEvent.user_id),
-        (audit_server, AuditEvent.server_id),
+        (audit_server, AuditEvent.server_reference_id),
     ):
         if raw_value:
             try:

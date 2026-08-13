@@ -33,6 +33,12 @@ class ServerRole(str, enum.Enum):
 class ServerType(str, enum.Enum):
     PAPER = "paper"
     VANILLA = "vanilla"
+    PURPUR = "purpur"
+    PUFFERFISH = "pufferfish"
+    FABRIC = "fabric"
+    QUILT = "quilt"
+    FORGE = "forge"
+    NEOFORGE = "neoforge"
 
 
 class DesiredState(str, enum.Enum):
@@ -103,6 +109,8 @@ class AuditEvent(TimestampMixin, Base):
         ForeignKey("minecraft_servers.id", ondelete="SET NULL"),
         nullable=True,
     )
+    server_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    server_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
 

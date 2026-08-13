@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from talos_panel.minecraft_status import query_minecraft_status
+from talos_panel.minecraft_status import concrete_minecraft_version, query_minecraft_status
 
 
 def varint(value: int) -> bytes:
@@ -14,6 +14,12 @@ def varint(value: int) -> bytes:
         output.append(byte | (0x80 if value else 0))
         if not value:
             return bytes(output)
+
+
+def test_concrete_version_is_extracted_from_server_status() -> None:
+    assert concrete_minecraft_version("Paper 26.2") == "26.2"
+    assert concrete_minecraft_version("Paper 1.21.8") == "1.21.8"
+    assert concrete_minecraft_version(None) is None
 
 
 @pytest.mark.asyncio

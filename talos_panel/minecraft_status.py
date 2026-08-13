@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import struct
 from dataclasses import dataclass
 from time import perf_counter
@@ -7,10 +8,18 @@ from typing import Any
 
 MAX_PACKET_BYTES = 2 * 1024 * 1024
 MAX_STRING_BYTES = 32767 * 4
+MINECRAFT_VERSION = re.compile(r"\b(?:\d+\.)+\d+\b")
 
 
 class MinecraftStatusError(Exception):
     pass
+
+
+def concrete_minecraft_version(version_name: str | None) -> str | None:
+    if not version_name:
+        return None
+    match = MINECRAFT_VERSION.search(version_name)
+    return match.group(0) if match else None
 
 
 @dataclass(frozen=True)
